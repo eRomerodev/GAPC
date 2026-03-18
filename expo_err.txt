@@ -1,0 +1,10 @@
+Error: The required package `expo-asset` cannot be found
+Error: The required package `expo-asset` cannot be found
+    at getAssetPlugins (C:\Users\hammy\OneDrive\Desktop\Semana key\GAPC\node_modules\@expo\metro-config\src\ExpoMetroConfig.ts:65:11)
+    at getDefaultConfig (C:\Users\hammy\OneDrive\Desktop\Semana key\GAPC\node_modules\@expo\metro-config\src\ExpoMetroConfig.ts:373:21)
+    at loadMetroConfigAsync (C:\Users\hammy\OneDrive\Desktop\Semana key\GAPC\node_modules\@expo\cli\src\start\server\metro\instantiateMetro.ts:96:43)
+    at instantiateMetroAsync (C:\Users\hammy\OneDrive\Desktop\Semana key\GAPC\node_modules\@expo\cli\src\start\server\metro\instantiateMetro.ts:195:53)
+    at MetroBundlerDevServer.startImplementationAsync (C:\Users\hammy\OneDrive\Desktop\Semana key\GAPC\node_modules\@expo\cli\src\start\server\metro\MetroBundlerDevServer.ts:940:69)
+    at MetroBundlerDevServer.startAsync (C:\Users\hammy\OneDrive\Desktop\Semana key\GAPC\node_modules\@expo\cli\src\start\server\BundlerDevServer.ts:160:18)
+    at DevServerManager.startAsync (C:\Users\hammy\OneDrive\Desktop\Semana key\GAPC\node_modules\@expo\cli\src\start\server\DevServerManager.ts:184:7)
+    at startAsync (C:\Users\hammy\OneDrive\Desktop\Semana key\GAPC\node_modules\@expo\cli\src\start\startAsync.ts:99:3)
