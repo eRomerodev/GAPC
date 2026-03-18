@@ -75,6 +75,9 @@ export function getDB() {
 // ─── AHORROS (SAVINGS) ──────────────────────────────────────────
 
 export async function addAhorro(sociaId, grupoId, monto, tipo = 'ahorro', notaVoz = null) {
+  if (!sociaId || !grupoId) throw new Error('sociaId and grupoId are required');
+  if (typeof monto !== 'number' || monto < 0) throw new Error('monto must be a positive number');
+  if (!['ahorro', 'prestamo', 'pago'].includes(tipo)) throw new Error('Invalid tipo');
   const result = await db.runAsync(
     'INSERT INTO Ahorros (socia_id, grupo_id, monto, tipo, nota_voz) VALUES (?, ?, ?, ?, ?)',
     [sociaId, grupoId, monto, tipo, notaVoz]
@@ -91,6 +94,7 @@ export async function addAhorro(sociaId, grupoId, monto, tipo = 'ahorro', notaVo
 }
 
 export async function getAhorrosBySocia(sociaId) {
+  if (!sociaId) throw new Error('sociaId is required');
   return await db.getAllAsync(
     'SELECT * FROM Ahorros WHERE socia_id = ? ORDER BY created_at DESC',
     [sociaId]
@@ -116,6 +120,7 @@ export async function getTotalAhorro(grupoId = null) {
 // ─── SOCIAS (MEMBERS) ───────────────────────────────────────────
 
 export async function addSocia(nombreAudio, grupoId, avatarColor = '#66bb6a') {
+  if (!nombreAudio || !grupoId) throw new Error('nombreAudio and grupoId are required');
   const result = await db.runAsync(
     'INSERT INTO Socias (nombre_audio, grupo_id, avatar_color) VALUES (?, ?, ?)',
     [nombreAudio, grupoId, avatarColor]
@@ -130,6 +135,7 @@ export async function addSocia(nombreAudio, grupoId, avatarColor = '#66bb6a') {
 }
 
 export async function getSociasByGrupo(grupoId) {
+  if (!grupoId) throw new Error('grupoId is required');
   return await db.getAllAsync(
     'SELECT * FROM Socias WHERE grupo_id = ? ORDER BY created_at',
     [grupoId]
@@ -143,6 +149,8 @@ export async function getAllSocias() {
 // ─── GRUPOS (GROUPS) ────────────────────────────────────────────
 
 export async function addGrupo(nombreAudio, lat = 0, lng = 0) {
+  if (!nombreAudio) throw new Error('nombreAudio is required');
+  if (typeof lat !== 'number' || typeof lng !== 'number') throw new Error('lat and lng must be numbers');
   const result = await db.runAsync(
     'INSERT INTO Grupos (nombre_audio, ubicacion_lat, ubicacion_lng) VALUES (?, ?, ?)',
     [nombreAudio, lat, lng]
@@ -162,6 +170,8 @@ export async function getAllGrupos() {
 }
 
 export async function updateGrupoRating(grupoId, rating) {
+  if (!grupoId) throw new Error('grupoId is required');
+  if (typeof rating !== 'number' || rating < 0 || rating > 5) throw new Error('Invalid rating');
   await db.runAsync('UPDATE Grupos SET rating = ? WHERE id = ?', [rating, grupoId]);
   await addProvenanceLog('Grupos', grupoId, 'UPDATE', { rating });
 }
@@ -169,6 +179,7 @@ export async function updateGrupoRating(grupoId, rating) {
 // ─── PROVENANCE LOG (AUDIT) ────────────────────────────────────
 
 export async function addProvenanceLog(tabla, registroId, accion, datos) {
+  if (!tabla || !registroId || !accion) throw new Error('Missing required fields for provenance log');
   await db.runAsync(
     'INSERT INTO Provenance_Log (tabla, registro_id, accion, datos_json) VALUES (?, ?, ?, ?)',
     [tabla, registroId, accion, JSON.stringify(datos)]
@@ -182,7 +193,7 @@ export async function getUnsyncedLogs() {
 }
 
 export async function markLogsSynced(ids) {
-  if (!ids.length) return;
+  if (!Array.isArray(ids) || !ids.length) return;
   const placeholders = ids.map(() => '?').join(',');
   await db.runAsync(
     `UPDATE Provenance_Log SET synced = 1 WHERE id IN (${placeholders})`,
