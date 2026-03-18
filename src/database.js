@@ -68,6 +68,14 @@ export async function initDB() {
     // Column already exists, ignore
   }
 
+  // Migration: add nombre_audio_uri column to Socias if it doesn't exist
+  try {
+    await db.runAsync('ALTER TABLE Socias ADD COLUMN nombre_audio_uri TEXT');
+    console.log('[GAPC] Added nombre_audio_uri column to Socias');
+  } catch (e) {
+    // Column already exists, ignore
+  }
+
   console.log('[GAPC] Database initialized successfully');
   return db;
 }
@@ -105,6 +113,17 @@ export async function getAhorrosBySocia(sociaId) {
   );
 }
 
+export async function getAhorrosByGrupo(grupoId) {
+  return await db.getAllAsync(
+    `SELECT A.*, S.nombre_audio as socia_nombre 
+     FROM Ahorros A 
+     LEFT JOIN Socias S ON A.socia_id = S.id 
+     WHERE A.grupo_id = ? 
+     ORDER BY A.created_at DESC`,
+    [grupoId]
+  );
+}
+
 export async function getTotalAhorro(grupoId = null) {
   let query = `
     SELECT 
@@ -123,10 +142,10 @@ export async function getTotalAhorro(grupoId = null) {
 
 // ─── SOCIAS (MEMBERS) ───────────────────────────────────────────
 
-export async function addSocia(nombreAudio, grupoId, avatarColor = '#66bb6a', fotoUri = null) {
+export async function addSocia(nombreAudio, grupoId, avatarColor = '#66bb6a', fotoUri = null, nombreAudioUri = null) {
   const result = await db.runAsync(
-    'INSERT INTO Socias (nombre_audio, grupo_id, avatar_color, foto_uri) VALUES (?, ?, ?, ?)',
-    [nombreAudio, grupoId, avatarColor, fotoUri]
+    'INSERT INTO Socias (nombre_audio, grupo_id, avatar_color, foto_uri, nombre_audio_uri) VALUES (?, ?, ?, ?, ?)',
+    [nombreAudio, grupoId, avatarColor, fotoUri, nombreAudioUri]
   );
 
   // Update member count in Grupos

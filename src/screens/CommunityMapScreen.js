@@ -1,204 +1,219 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
-  Platform,
+  Text,
 } from 'react-native';
-import { Users, Star, Volume2, MapPin } from 'lucide-react-native';
-import { Text } from 'react-native';
-import { getAllGrupos } from '../database';
+import MapView, { Marker } from 'react-native-maps';
+import { Users, Star, Volume2, Navigation } from 'lucide-react-native';
+import * as Location from 'expo-location';
+import { useFocusEffect } from '@react-navigation/native';
+import { getAllGrupos, getSociasByGrupo } from '../database';
 import { speakOnPress, speakMapGuide } from '../utils/audioGuide';
 
-const { width, height } = Dimensions.get('window');
-
-// We'll use a simplified map view that works reliably in Expo Go
-// react-native-maps requires additional native setup; for Expo Go compatibility,
-// we simulate a visual map with positioned community markers
-
-const MOCK_COMMUNITIES = [
-  {
-    id: 1,
-    nombre: 'Las Flores',
-    lat: 0.3,
-    lng: 0.4,
-    rating: 4.5,
-    miembros: 8,
-    color: '#66bb6a',
-  },
-  {
-    id: 2,
-    nombre: 'Esperanza',
-    lat: 0.55,
-    lng: 0.6,
-    rating: 5.0,
-    miembros: 12,
-    color: '#42a5f5',
-  },
-  {
-    id: 3,
-    nombre: 'Nuevo Amanecer',
-    lat: 0.7,
-    lng: 0.25,
-    rating: 3.5,
-    miembros: 6,
-    color: '#ab47bc',
-  },
-  {
-    id: 4,
-    nombre: 'Sol Naciente',
-    lat: 0.2,
-    lng: 0.7,
-    rating: 4.0,
-    miembros: 10,
-    color: '#ff7043',
-  },
-  {
-    id: 5,
-    nombre: 'Monte Verde',
-    lat: 0.8,
-    lng: 0.65,
-    rating: 4.8,
-    miembros: 15,
-    color: '#ffa726',
-  },
-];
+// Default region: El Salvador
+const DEFAULT_REGION = {
+  latitude: 13.6929,
+  longitude: -89.2182,
+  latitudeDelta: 0.08,
+  longitudeDelta: 0.08,
+};
 
 export default function CommunityMapScreen() {
-  const [selectedCommunity, setSelectedCommunity] = useState(null);
+  const [grupos, setGrupos] = useState([]);
+  const [selectedGrupo, setSelectedGrupo] = useState(null);
+  const [selectedSocias, setSelectedSocias] = useState([]);
+  const [initialRegion, setInitialRegion] = useState(DEFAULT_REGION);
+  const [locationReady, setLocationReady] = useState(false);
+  const mapRef = useRef(null);
+
+  const loadData = useCallback(async () => {
+    try {
+      const g = await getAllGrupos();
+      setGrupos(g);
+    } catch (e) {
+      console.log('[Map] Error loading groups:', e);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          const userRegion = {
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            latitudeDelta: 0.08,
+            longitudeDelta: 0.08,
+          };
+          setInitialRegion(userRegion);
+        }
+      } catch (e) {
+        console.log('[Map] Location error:', e);
+      } finally {
+        setLocationReady(true);
+      }
+    })();
+
     speakMapGuide();
   }, []);
 
-  const handleCommunityPress = (community) => {
-    setSelectedCommunity(community);
+  const handleMarkerPress = async (grupo) => {
+    setSelectedGrupo(grupo);
     speakOnPress(
-      `Grupo ${community.nombre}. ${community.miembros} miembros. Calificación: ${community.rating} estrellas.`
+      `Grupo ${grupo.nombre_audio}. ${grupo.miembros} miembros. Calificación: ${grupo.rating} estrellas.`
     );
+    try {
+      const socias = await getSociasByGrupo(grupo.id);
+      setSelectedSocias(socias);
+    } catch (e) {
+      setSelectedSocias([]);
+    }
   };
+
+  const goToMyLocation = async () => {
+    try {
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      mapRef.current?.animateToRegion({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      }, 500);
+    } catch (e) {
+      console.log('[Map] Error getting location:', e);
+    }
+  };
+
+  const renderStars = (rating) => {
+    return Array.from({ length: 5 }).map((_, i) => (
+      <Star
+        key={i}
+        size={16}
+        color={i < Math.round(rating) ? '#ffd54f' : '#555'}
+        fill={i < Math.round(rating) ? '#ffd54f' : 'transparent'}
+      />
+    ));
+  };
+
+  if (!locationReady) {
+    return <View style={styles.container} />;
+  }
 
   return (
     <View style={styles.container}>
-      {/* Audio guide button */}
-      <TouchableOpacity
-        style={styles.guideButton}
-        onPress={() => speakMapGuide()}
+      {/* Real Map */}
+      <MapView
+        ref={mapRef}
+        style={StyleSheet.absoluteFillObject}
+        initialRegion={initialRegion}
+        showsUserLocation={true}
+        showsMyLocationButton={false}
+        showsCompass={true}
+        mapType="standard"
       >
-        <Volume2 size={28} color="#ffd54f" />
-      </TouchableOpacity>
+        {grupos.map((g) => {
+          if (!g.ubicacion_lat || !g.ubicacion_lng) return null;
+          return (
+            <Marker
+              key={g.id}
+              coordinate={{
+                latitude: g.ubicacion_lat,
+                longitude: g.ubicacion_lng,
+              }}
+              onPress={() => handleMarkerPress(g)}
+            >
+              <View style={[
+                styles.markerOuter,
+                selectedGrupo?.id === g.id && styles.markerOuterSelected,
+              ]}>
+                <View style={[
+                  styles.markerInner,
+                  selectedGrupo?.id === g.id && styles.markerInnerSelected,
+                ]}>
+                  <Users size={18} color="#fff" strokeWidth={2.5} />
+                </View>
+              </View>
+            </Marker>
+          );
+        })}
+      </MapView>
 
-      {/* Visual Map Area */}
-      <View style={styles.mapArea}>
-        {/* Grid lines to simulate map */}
-        {Array.from({ length: 6 }).map((_, i) => (
-          <View
-            key={`h-${i}`}
-            style={[
-              styles.gridLine,
-              styles.gridLineH,
-              { top: `${(i + 1) * 15}%` },
-            ]}
-          />
-        ))}
-        {Array.from({ length: 6 }).map((_, i) => (
-          <View
-            key={`v-${i}`}
-            style={[
-              styles.gridLine,
-              styles.gridLineV,
-              { left: `${(i + 1) * 15}%` },
-            ]}
-          />
-        ))}
+      {/* Top buttons */}
+      <View style={styles.topButtons}>
+        <TouchableOpacity
+          style={styles.topBtn}
+          onPress={() => speakMapGuide()}
+        >
+          <Volume2 size={22} color="#ffd54f" />
+        </TouchableOpacity>
 
-        {/* Community markers */}
-        {MOCK_COMMUNITIES.map((c) => (
-          <TouchableOpacity
-            key={c.id}
-            style={[
-              styles.marker,
-              {
-                top: `${c.lat * 80 + 5}%`,
-                left: `${c.lng * 80 + 5}%`,
-                backgroundColor: c.color,
-                borderColor:
-                  selectedCommunity?.id === c.id ? '#ffd54f' : c.color,
-                borderWidth: selectedCommunity?.id === c.id ? 4 : 2,
-                transform: [
-                  { scale: selectedCommunity?.id === c.id ? 1.3 : 1 },
-                ],
-              },
-            ]}
-            onPress={() => handleCommunityPress(c)}
-            activeOpacity={0.7}
-          >
-            <Users size={24} color="#fff" strokeWidth={2} />
-          </TouchableOpacity>
-        ))}
-
-        {/* "You are here" pin */}
-        <View style={styles.youAreHere}>
-          <MapPin size={32} color="#ffd54f" fill="#ffd54f" strokeWidth={2} />
-        </View>
+        <TouchableOpacity
+          style={styles.topBtn}
+          onPress={goToMyLocation}
+        >
+          <Navigation size={22} color="#42a5f5" />
+        </TouchableOpacity>
       </View>
 
-      {/* Selected Community Info */}
-      {selectedCommunity && (
-        <View style={styles.infoPanel}>
-          <View
-            style={[
-              styles.infoDot,
-              { backgroundColor: selectedCommunity.color },
-            ]}
-          />
-          <View style={styles.infoContent}>
-            {/* Member dots */}
-            <View style={styles.memberDots}>
-              {Array.from({
-                length: Math.min(selectedCommunity.miembros, 12),
-              }).map((_, i) => (
+      {/* Selected Group Info Panel */}
+      {selectedGrupo && (
+        <TouchableOpacity
+          style={styles.infoPanel}
+          onPress={() =>
+            speakOnPress(
+              `Grupo ${selectedGrupo.nombre_audio}. ${selectedGrupo.miembros} socias.`
+            )
+          }
+          activeOpacity={0.8}
+        >
+          {/* Group icon */}
+          <View style={styles.infoIcon}>
+            <Users size={26} color="#ffd54f" strokeWidth={2} />
+          </View>
+
+          <View style={styles.infoTextArea}>
+            <Text style={styles.infoName} numberOfLines={1}>
+              {selectedGrupo.nombre_audio}
+            </Text>
+
+            <View style={styles.infoStars}>
+              {renderStars(selectedGrupo.rating)}
+            </View>
+
+            <View style={styles.infoMembers}>
+              {selectedSocias.slice(0, 6).map((s, i) => (
                 <View
-                  key={i}
+                  key={s.id}
                   style={[
-                    styles.memberDot,
-                    { backgroundColor: selectedCommunity.color },
+                    styles.miniAvatar,
+                    { backgroundColor: s.avatar_color, marginLeft: i > 0 ? -6 : 0 },
                   ]}
                 />
               ))}
-            </View>
-            {/* Star rating */}
-            <View style={styles.starRow}>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Star
-                  key={i}
-                  size={24}
-                  color={
-                    i < Math.round(selectedCommunity.rating)
-                      ? '#ffd54f'
-                      : '#333'
-                  }
-                  fill={
-                    i < Math.round(selectedCommunity.rating)
-                      ? '#ffd54f'
-                      : 'transparent'
-                  }
-                />
-              ))}
+              <Text style={styles.infoMemberCount}>
+                {selectedGrupo.miembros} miembros
+              </Text>
             </View>
           </View>
-          <TouchableOpacity
-            onPress={() =>
-              speakOnPress(
-                `Grupo ${selectedCommunity.nombre}. ${selectedCommunity.miembros} socias. Calificación: ${selectedCommunity.rating} estrellas.`
-              )
-            }
-            style={styles.speakBtn}
-          >
-            <Volume2 size={28} color="#ffd54f" />
-          </TouchableOpacity>
-        </View>
+
+          <View style={styles.speakBtn}>
+            <Volume2 size={20} color="#ffd54f" />
+          </View>
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -209,101 +224,108 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0d1117',
   },
-  guideButton: {
+  topButtons: {
     position: 'absolute',
     top: 60,
-    right: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 24,
-    padding: 12,
-    zIndex: 10,
+    right: 16,
+    gap: 10,
   },
-  mapArea: {
-    flex: 1,
-    marginTop: 50,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    backgroundColor: '#161b22',
-    borderRadius: 24,
+  topBtn: {
+    backgroundColor: 'rgba(22, 27, 34, 0.92)',
+    borderRadius: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: '#21253b',
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  gridLine: {
-    position: 'absolute',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  gridLineH: {
-    left: 0,
-    right: 0,
-    height: 1,
-  },
-  gridLineV: {
-    top: 0,
-    bottom: 0,
-    width: 1,
-  },
-  marker: {
-    position: 'absolute',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
     elevation: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
-    shadowRadius: 6,
+    shadowRadius: 4,
   },
-  youAreHere: {
-    position: 'absolute',
-    top: '45%',
-    left: '45%',
+  markerOuter: {
+    padding: 4,
+    borderRadius: 24,
+    backgroundColor: 'rgba(102, 187, 106, 0.3)',
+  },
+  markerOuterSelected: {
+    backgroundColor: 'rgba(255, 213, 79, 0.4)',
+  },
+  markerInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#66bb6a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    elevation: 4,
+  },
+  markerInnerSelected: {
+    backgroundColor: '#ffd54f',
+    borderColor: '#ffd54f',
   },
   infoPanel: {
     position: 'absolute',
-    bottom: 100,
+    bottom: 24,
     left: 16,
     right: 16,
     backgroundColor: '#161b22',
     borderRadius: 20,
-    padding: 20,
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#21253b',
-    elevation: 8,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
   },
-  infoDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    marginRight: 16,
+  infoIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#21253b',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  infoContent: {
+  infoTextArea: {
     flex: 1,
   },
-  memberDots: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    marginBottom: 8,
+  infoName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#e6edf3',
+    marginBottom: 3,
   },
-  memberDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  starRow: {
+  infoStars: {
     flexDirection: 'row',
-    gap: 4,
+    gap: 2,
+    marginBottom: 5,
+  },
+  infoMembers: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  miniAvatar: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: '#161b22',
+  },
+  infoMemberCount: {
+    color: '#8b949e',
+    fontSize: 12,
+    marginLeft: 6,
   },
   speakBtn: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 24,
-    padding: 12,
-    marginLeft: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 14,
+    padding: 10,
+    marginLeft: 8,
   },
 });

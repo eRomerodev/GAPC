@@ -8,25 +8,30 @@ import {
   StyleSheet,
   Image,
 } from 'react-native';
-import { Users, Star, Plus, ChevronRight } from 'lucide-react-native';
-import { getAllGrupos, getSociasByGrupo } from '../database';
+import { Users, Star, Plus, ChevronRight, DollarSign } from 'lucide-react-native';
+import { getAllGrupos, getSociasByGrupo, getTotalAhorro } from '../database';
 import { speakOnPress, confirmHaptic } from '../utils/audioGuide';
 
 export default function CommunityListScreen({ navigation }) {
   const [grupos, setGrupos] = useState([]);
   const [grupoSocias, setGrupoSocias] = useState({});
+  const [grupoTotals, setGrupoTotals] = useState({});
 
   const loadData = useCallback(async () => {
     try {
       const g = await getAllGrupos();
       setGrupos(g);
-      // Load socias for each group
+      // Load socias and totals for each group
       const sociaMap = {};
+      const totalsMap = {};
       for (const grupo of g) {
         const socias = await getSociasByGrupo(grupo.id);
         sociaMap[grupo.id] = socias;
+        const totals = await getTotalAhorro(grupo.id);
+        totalsMap[grupo.id] = totals;
       }
       setGrupoSocias(sociaMap);
+      setGrupoTotals(totalsMap);
     } catch (e) {
       console.log('[CommunityList] Error loading data:', e);
     }
@@ -103,13 +108,15 @@ export default function CommunityListScreen({ navigation }) {
       >
         {grupos.map((grupo) => {
           const socias = grupoSocias[grupo.id] || [];
+          const totals = grupoTotals[grupo.id] || { total_ahorro: 0, total_prestamo: 0, total_pago: 0 };
+          const totalNeto = totals.total_ahorro - totals.total_prestamo + totals.total_pago;
           return (
             <TouchableOpacity
               key={grupo.id}
               style={styles.groupCard}
               onPress={() => {
                 confirmHaptic();
-                speakOnPress(`${grupo.nombre_audio}. ${grupo.miembros} miembros.`);
+                speakOnPress(`${grupo.nombre_audio}. ${grupo.miembros} miembros. Total ahorrado: ${Math.floor(totalNeto)} dólares.`);
                 navigation.navigate('GroupDetail', { grupoId: grupo.id });
               }}
               activeOpacity={0.7}
@@ -131,6 +138,15 @@ export default function CommunityListScreen({ navigation }) {
                 <ChevronRight size={22} color="#555" />
               </View>
 
+              {/* Total Savings */}
+              <View style={styles.totalRow}>
+                <View style={styles.totalIcon}>
+                  <DollarSign size={18} color="#66bb6a" strokeWidth={2.5} />
+                </View>
+                <Text style={styles.totalLabel}>Total comunidad:</Text>
+                <Text style={styles.totalAmount}>${totalNeto.toFixed(2)}</Text>
+              </View>
+
               {/* Members Row */}
               <View style={styles.cardFooter}>
                 <Text style={styles.membersLabel}>
@@ -141,7 +157,6 @@ export default function CommunityListScreen({ navigation }) {
             </TouchableOpacity>
           );
         })}
-
         {grupos.length === 0 && (
           <View style={styles.emptyState}>
             <Users size={64} color="#333" strokeWidth={1} />
@@ -241,6 +256,33 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#21253b',
     paddingTop: 14,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#66bb6a12',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  totalIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#66bb6a22',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  totalLabel: {
+    color: '#8b949e',
+    fontSize: 13,
+    flex: 1,
+  },
+  totalAmount: {
+    color: '#66bb6a',
+    fontSize: 20,
+    fontWeight: '700',
   },
   membersLabel: {
     fontSize: 13,
