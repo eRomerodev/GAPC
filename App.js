@@ -1,15 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Home, CircleDollarSign, Map, RefreshCw } from 'lucide-react-native';
 
 import { initDB } from './src/database';
+import CommunityListScreen from './src/screens/CommunityListScreen';
+import GroupDetailScreen from './src/screens/GroupDetailScreen';
+import FaceVerifyScreen from './src/screens/FaceVerifyScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import TransactionScreen from './src/screens/TransactionScreen';
 import CommunityMapScreen from './src/screens/CommunityMapScreen';
 import SyncScreen from './src/screens/SyncScreen';
 
+const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 const TAB_ICONS = {
@@ -25,6 +30,64 @@ const ACTIVE_COLORS = {
   Map: '#ab47bc',
   Sync: '#ff7043',
 };
+
+function MainTabs({ route }) {
+  const { grupoId, sociaId, sociaName } = route.params || {};
+
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarShowLabel: false,
+        tabBarStyle: styles.tabBar,
+        tabBarIcon: ({ focused }) => {
+          const IconComponent = TAB_ICONS[route.name];
+          const activeColor = ACTIVE_COLORS[route.name];
+          return (
+            <View
+              style={[
+                styles.tabIconContainer,
+                focused && {
+                  backgroundColor: activeColor + '22',
+                  borderColor: activeColor,
+                },
+              ]}
+            >
+              <IconComponent
+                size={focused ? 32 : 26}
+                color={focused ? activeColor : '#555'}
+                strokeWidth={focused ? 2.5 : 1.5}
+              />
+            </View>
+          );
+        },
+      })}
+    >
+      <Tab.Screen name="Dashboard">
+        {(props) => (
+          <DashboardScreen
+            {...props}
+            grupoId={grupoId}
+            sociaId={sociaId}
+            sociaName={sociaName}
+          />
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="Transaction">
+        {(props) => (
+          <TransactionScreen
+            {...props}
+            grupoId={grupoId}
+            sociaId={sociaId}
+            sociaName={sociaName}
+          />
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="Map" component={CommunityMapScreen} />
+      <Tab.Screen name="Sync" component={SyncScreen} />
+    </Tab.Navigator>
+  );
+}
 
 export default function App() {
   const [dbReady, setDbReady] = useState(false);
@@ -55,39 +118,18 @@ export default function App() {
     <>
       <StatusBar barStyle="light-content" backgroundColor="#0d1117" />
       <NavigationContainer>
-        <Tab.Navigator
-          screenOptions={({ route }) => ({
+        <Stack.Navigator
+          screenOptions={{
             headerShown: false,
-            tabBarShowLabel: false,
-            tabBarStyle: styles.tabBar,
-            tabBarIcon: ({ focused }) => {
-              const IconComponent = TAB_ICONS[route.name];
-              const activeColor = ACTIVE_COLORS[route.name];
-              return (
-                <View
-                  style={[
-                    styles.tabIconContainer,
-                    focused && {
-                      backgroundColor: activeColor + '22',
-                      borderColor: activeColor,
-                    },
-                  ]}
-                >
-                  <IconComponent
-                    size={focused ? 32 : 26}
-                    color={focused ? activeColor : '#555'}
-                    strokeWidth={focused ? 2.5 : 1.5}
-                  />
-                </View>
-              );
-            },
-          })}
+            animation: 'slide_from_right',
+            contentStyle: { backgroundColor: '#0d1117' },
+          }}
         >
-          <Tab.Screen name="Dashboard" component={DashboardScreen} />
-          <Tab.Screen name="Transaction" component={TransactionScreen} />
-          <Tab.Screen name="Map" component={CommunityMapScreen} />
-          <Tab.Screen name="Sync" component={SyncScreen} />
-        </Tab.Navigator>
+          <Stack.Screen name="CommunityList" component={CommunityListScreen} />
+          <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
+          <Stack.Screen name="FaceVerify" component={FaceVerifyScreen} />
+          <Stack.Screen name="MainTabs" component={MainTabs} />
+        </Stack.Navigator>
       </NavigationContainer>
     </>
   );

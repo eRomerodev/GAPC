@@ -60,6 +60,14 @@ export async function initDB() {
     await seedDemoData();
   }
 
+  // Migration: add foto_uri column to Socias if it doesn't exist
+  try {
+    await db.runAsync('ALTER TABLE Socias ADD COLUMN foto_uri TEXT');
+    console.log('[GAPC] Added foto_uri column to Socias');
+  } catch (e) {
+    // Column already exists, ignore
+  }
+
   console.log('[GAPC] Database initialized successfully');
   return db;
 }
@@ -115,11 +123,14 @@ export async function getTotalAhorro(grupoId = null) {
 
 // ─── SOCIAS (MEMBERS) ───────────────────────────────────────────
 
-export async function addSocia(nombreAudio, grupoId, avatarColor = '#66bb6a') {
+export async function addSocia(nombreAudio, grupoId, avatarColor = '#66bb6a', fotoUri = null) {
   const result = await db.runAsync(
-    'INSERT INTO Socias (nombre_audio, grupo_id, avatar_color) VALUES (?, ?, ?)',
-    [nombreAudio, grupoId, avatarColor]
+    'INSERT INTO Socias (nombre_audio, grupo_id, avatar_color, foto_uri) VALUES (?, ?, ?, ?)',
+    [nombreAudio, grupoId, avatarColor, fotoUri]
   );
+
+  // Update member count in Grupos
+  await updateGrupoMiembros(grupoId);
 
   await addProvenanceLog('Socias', result.lastInsertRowId, 'INSERT', {
     nombre_audio: nombreAudio,
@@ -138,6 +149,15 @@ export async function getSociasByGrupo(grupoId) {
 
 export async function getAllSocias() {
   return await db.getAllAsync('SELECT * FROM Socias ORDER BY created_at');
+}
+
+export async function getSociaById(sociaId) {
+  return await db.getFirstAsync('SELECT * FROM Socias WHERE id = ?', [sociaId]);
+}
+
+export async function updateSociaFoto(sociaId, fotoUri) {
+  await db.runAsync('UPDATE Socias SET foto_uri = ? WHERE id = ?', [fotoUri, sociaId]);
+  await addProvenanceLog('Socias', sociaId, 'UPDATE', { foto_uri: fotoUri });
 }
 
 // ─── GRUPOS (GROUPS) ────────────────────────────────────────────
@@ -164,6 +184,14 @@ export async function getAllGrupos() {
 export async function updateGrupoRating(grupoId, rating) {
   await db.runAsync('UPDATE Grupos SET rating = ? WHERE id = ?', [rating, grupoId]);
   await addProvenanceLog('Grupos', grupoId, 'UPDATE', { rating });
+}
+
+export async function updateGrupoMiembros(grupoId) {
+  const result = await db.getFirstAsync(
+    'SELECT COUNT(*) as c FROM Socias WHERE grupo_id = ?',
+    [grupoId]
+  );
+  await db.runAsync('UPDATE Grupos SET miembros = ? WHERE id = ?', [result.c, grupoId]);
 }
 
 // ─── PROVENANCE LOG (AUDIT) ────────────────────────────────────

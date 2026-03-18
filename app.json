@@ -15,7 +15,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "GAPC necesita acceso al micrófono para grabar notas de voz de ahorro.",
-        "NSLocationWhenInUseUsageDescription": "GAPC usa tu ubicación para encontrar grupos de ahorro cercanos."
+        "NSLocationWhenInUseUsageDescription": "GAPC usa tu ubicación para encontrar grupos de ahorro cercanos.",
+        "NSCameraUsageDescription": "GAPC necesita acceso a la cámara para verificar la identidad de los miembros."
       }
     },
     "android": {
@@ -28,7 +29,8 @@
       "permissions": [
         "RECORD_AUDIO",
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA"
       ]
     },
     "web": {
@@ -42,7 +44,13 @@
           "locationWhenInUsePermission": "GAPC usa tu ubicación para encontrar grupos cercanos."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "GAPC necesita la cámara para verificar tu identidad."
+        }
+      ]
     ]
   }
 }

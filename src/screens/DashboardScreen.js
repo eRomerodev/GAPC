@@ -22,7 +22,7 @@ import { speakOnPress, speakSaldo, speakDashboardGuide, confirmHaptic } from '..
 
 const { width } = Dimensions.get('window');
 
-export default function DashboardScreen() {
+export default function DashboardScreen({ grupoId, sociaId, sociaName }) {
   const [totals, setTotals] = useState({ total_ahorro: 0, total_prestamo: 0, total_pago: 0 });
   const [socias, setSocias] = useState([]);
   const [grupos, setGrupos] = useState([]);
@@ -31,16 +31,16 @@ export default function DashboardScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const t = await getTotalAhorro();
+      const t = await getTotalAhorro(grupoId || null);
       setTotals(t);
       const s = await getAllSocias();
-      setSocias(s);
+      setSocias(grupoId ? s.filter(sc => sc.grupo_id === grupoId) : s);
       const g = await getAllGrupos();
-      setGrupos(g);
+      setGrupos(grupoId ? g.filter(gr => gr.id === grupoId) : g);
     } catch (e) {
       console.log('[Dashboard] Error loading data:', e);
     }
-  }, []);
+  }, [grupoId]);
 
   useFocusEffect(
     useCallback(() => {
