@@ -7,8 +7,10 @@ import {
   ScrollView,
   Animated,
 } from 'react-native';
-import { Check, X, CircleDollarSign, Coins, TrendingUp, TrendingDown } from 'lucide-react-native';
+import { Check, X, CircleDollarSign, Coins, TrendingUp, TrendingDown, Mic } from 'lucide-react-native';
+import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync, RecordingPresets } from 'expo-audio';
 import { speak, confirmHaptic, errorHaptic, speakOnPress } from '../utils/audioGuide';
+import { parseVoiceCommand, simulateTranscription } from '../utils/nlpService';
 import { addAhorro } from '../database';
 
 const BILLS = [1, 5, 10, 20, 50, 100];
@@ -23,6 +25,7 @@ export default function TransactionScreen() {
   const [total, setTotal] = useState(0);
   const [scaleAnim] = useState(new Animated.Value(1));
   const [txType, setTxType] = useState('ahorro');
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   const animateTotal = () => {
     scaleAnim.setValue(1.2);
@@ -57,6 +60,48 @@ export default function TransactionScreen() {
     if (dollars === 0 && cents === 0) text = 'Total en cero.';
     
     speakOnPress(text);
+  };
+
+  const startVoice = async () => {
+    try {
+      const { granted } = await requestRecordingPermissionsAsync();
+      if (!granted) {
+        speak('Permiso denegado para el micrófono');
+        return;
+      }
+      await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      confirmHaptic();
+      // Optional: speak('Escuchando...') - but might bleed into the recording
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const stopVoice = () => {
+    if (audioRecorder.isRecording) {
+      audioRecorder.stop();
+      confirmHaptic();
+      
+      // Simulate NLP logic with a small delay
+      setTimeout(() => {
+        const textStr = simulateTranscription(); // e.g. "Ahorré 3 billetes"
+        const parsed = parseVoiceCommand(textStr);
+        if (parsed) {
+          addAmount(parsed.monto);
+          if (parsed.action === 'prestamo' || parsed.action === 'retiro') {
+            setTxType('prestamo');
+          } else {
+            setTxType('ahorro');
+          }
+          speakOnPress(`Entendido. ${parsed.action === 'prestamo' ? 'Retira' : 'Ahorra'} ${parsed.monto} dólares.`);
+        } else {
+          errorHaptic();
+          speak('No entendí el audio. Usa los botones por favor.');
+        }
+      }, 800);
+    }
   };
 
   const handleSave = async () => {
@@ -116,11 +161,11 @@ export default function TransactionScreen() {
         </TouchableOpacity>
         
         <TouchableOpacity 
-          style={[styles.typeBtn, txType === 'retiro' && styles.typeBtnActiveRetiro]}
-          onPress={() => { setTxType('retiro'); speakOnPress('Modo Retirar dinero'); }}
+          style={[styles.typeBtn, txType === 'prestamo' && styles.typeBtnActiveRetiro]}
+          onPress={() => { setTxType('prestamo'); speakOnPress('Modo Retirar dinero'); }}
         >
-          <TrendingDown color={txType === 'retiro' ? '#fff' : '#ef5350'} size={32} />
-          <Text style={[styles.typeText, txType === 'retiro' && {color: '#fff'}]}>Retirar</Text>
+          <TrendingDown color={txType === 'prestamo' ? '#fff' : '#ef5350'} size={32} />
+          <Text style={[styles.typeText, txType === 'prestamo' && {color: '#fff'}]}>Retirar</Text>
         </TouchableOpacity>
       </View>
 
@@ -169,6 +214,18 @@ export default function TransactionScreen() {
         <View style={styles.actions}>
           <TouchableOpacity style={[styles.actionBtn, styles.clearBtn]} onPress={handleClear}>
             <X color="#fff" size={40} strokeWidth={3} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[
+              styles.actionBtn, 
+              styles.micBtn,
+              audioRecorder.isRecording && styles.micBtnRecording
+            ]} 
+            onPressIn={startVoice}
+            onPressOut={stopVoice}
+            accessibilityLabel="Mantener presionado para hablar"
+          >
+            <Mic color="#fff" size={40} strokeWidth={3} />
           </TouchableOpacity>
           <TouchableOpacity style={[styles.actionBtn, styles.saveBtn]} onPress={handleSave}>
             <Check color="#fff" size={48} strokeWidth={3} />
@@ -308,9 +365,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#d32f2f',
     width: 80,
   },
+  micBtn: {
+    backgroundColor: '#1976d2',
+    width: 80,
+    marginHorizontal: 16,
+  },
+  micBtnRecording: {
+    backgroundColor: '#ef5350',
+    transform: [{ scale: 1.1 }],
+  },
   saveBtn: {
     backgroundColor: '#2e7d32',
     flex: 1,
-    marginLeft: 20,
   },
 });
