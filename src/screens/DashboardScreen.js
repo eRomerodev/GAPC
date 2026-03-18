@@ -129,7 +129,7 @@ export default function DashboardScreen() {
           { backgroundColor: isPositive ? '#1b5e20' : '#b71c1c' },
         ]}
         onPress={() => {
-          speakSaldo(totals.total_ahorro, totals.total_prestamo);
+          speakSaldo(totals.total_ahorro, totals.total_prestamo, totals.total_pago);
           confirmHaptic();
         }}
         activeOpacity={0.8}
