@@ -8,7 +8,12 @@ import {
   Alert,
 } from 'react-native';
 import { Mic, MicOff, Check, X, Banknote, Volume2 } from 'lucide-react-native';
-import { Audio } from 'expo-av';
+import { 
+  useAudioRecorder, 
+  requestRecordingPermissionsAsync, 
+  setAudioModeAsync,
+  RecordingPresets
+} from 'expo-audio';
 import {
   speakOnPress,
   speakRecordGuide,
@@ -40,6 +45,8 @@ export default function VoiceRecordScreen() {
   useEffect(() => {
     speakRecordGuide();
   }, []);
+
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   // Pulse animation for mic button
   useEffect(() => {
@@ -82,22 +89,21 @@ export default function VoiceRecordScreen() {
 
   const startRecording = async () => {
     try {
-      const permission = await Audio.requestPermissionsAsync();
+      const permission = await requestRecordingPermissionsAsync();
       if (!permission.granted) {
         errorHaptic();
         speak('Necesito permiso para usar el micrófono.');
         return;
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
       });
 
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      recordingRef.current = recording;
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      
       setIsRecording(true);
       speakOnPress('Grabando. Habla ahora.');
     } catch (err) {
@@ -110,12 +116,11 @@ export default function VoiceRecordScreen() {
     try {
       setIsRecording(false);
 
-      if (recordingRef.current) {
-        await recordingRef.current.stopAndUnloadAsync();
-        const uri = recordingRef.current.getURI();
-        recordingRef.current = null;
+      if (recorder.isRecording) {
+        await recorder.stop();
+        const uri = recorder.uri;
 
-        await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+        await setAudioModeAsync({ allowsRecording: false });
 
         // Simulate NLP transcription
         const transcription = simulateTranscription();
