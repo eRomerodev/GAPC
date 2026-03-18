@@ -7,7 +7,7 @@ import {
   ScrollView,
   Animated,
 } from 'react-native';
-import { Check, X, CircleDollarSign, Coins } from 'lucide-react-native';
+import { Check, X, CircleDollarSign, Coins, TrendingUp, TrendingDown } from 'lucide-react-native';
 import { speak, confirmHaptic, errorHaptic, speakOnPress } from '../utils/audioGuide';
 import { addAhorro } from '../database';
 
@@ -22,6 +22,7 @@ const COINS = [
 export default function TransactionScreen() {
   const [total, setTotal] = useState(0);
   const [scaleAnim] = useState(new Animated.Value(1));
+  const [txType, setTxType] = useState('ahorro');
 
   const animateTotal = () => {
     scaleAnim.setValue(1.2);
@@ -50,7 +51,7 @@ export default function TransactionScreen() {
     const dollars = Math.floor(total);
     const cents = Math.round((total - dollars) * 100);
     
-    let text = `Total a guardar: `;
+    let text = txType === 'ahorro' ? `Total a guardar: ` : `Total a retirar: `;
     if (dollars > 0) text += `${dollars} ${dollars === 1 ? 'dólar' : 'dólares'} `;
     if (cents > 0) text += `con ${cents} centavos`;
     if (dollars === 0 && cents === 0) text = 'Total en cero.';
@@ -67,9 +68,9 @@ export default function TransactionScreen() {
 
     try {
       // Default to Socia 1, Grupo 1 for the demo
-      await addAhorro(1, 1, total, 'ahorro');
+      await addAhorro(1, 1, total, txType);
       confirmHaptic();
-      speak(`Ahorro de ${total} guardado correctamente.`);
+      speak(`${txType === 'ahorro' ? 'Ahorro' : 'Retiro'} de ${total} guardado correctamente.`);
       setTotal(0);
     } catch (err) {
       console.error('[Transaction] Save error:', err);
@@ -96,11 +97,32 @@ export default function TransactionScreen() {
         onPress={playTotalAudio}
         accessibilityLabel="Total acumulado"
       >
-        <Text style={styles.totalLabel}>Total a guardar</Text>
+        <Text style={styles.totalLabel}>
+          {txType === 'ahorro' ? 'Total a guardar' : 'Total a retirar'}
+        </Text>
         <Animated.Text style={[styles.totalAmount, { transform: [{ scale: scaleAnim }] }]}>
           $ {total.toFixed(2)}
         </Animated.Text>
       </TouchableOpacity>
+
+      {/* Transaction Type Toggle */}
+      <View style={styles.typeSelector}>
+        <TouchableOpacity 
+          style={[styles.typeBtn, txType === 'ahorro' && styles.typeBtnActiveAhorro]}
+          onPress={() => { setTxType('ahorro'); speakOnPress('Modo Ahorrar dinero'); }}
+        >
+          <TrendingUp color={txType === 'ahorro' ? '#fff' : '#66bb6a'} size={32} />
+          <Text style={[styles.typeText, txType === 'ahorro' && {color: '#fff'}]}>Ahorrar</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.typeBtn, txType === 'retiro' && styles.typeBtnActiveRetiro]}
+          onPress={() => { setTxType('retiro'); speakOnPress('Modo Retirar dinero'); }}
+        >
+          <TrendingDown color={txType === 'retiro' ? '#fff' : '#ef5350'} size={32} />
+          <Text style={[styles.typeText, txType === 'retiro' && {color: '#fff'}]}>Retirar</Text>
+        </TouchableOpacity>
+      </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Bills Section */}
@@ -179,6 +201,37 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     marginBottom: 8,
+  },
+  typeSelector: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 20,
+    gap: 12,
+  },
+  typeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#30363d',
+    backgroundColor: '#161b22',
+  },
+  typeBtnActiveAhorro: {
+    backgroundColor: '#1b5e20',
+    borderColor: '#2e7d32',
+  },
+  typeBtnActiveRetiro: {
+    backgroundColor: '#b71c1c',
+    borderColor: '#e53935',
+  },
+  typeText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#8b949e',
+    marginLeft: 8,
   },
   totalAmount: {
     color: '#66bb6a',

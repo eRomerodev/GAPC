@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   TouchableOpacity,
@@ -41,8 +42,13 @@ export default function DashboardScreen() {
     }
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
+
   useEffect(() => {
-    loadData();
     speakDashboardGuide();
 
     // Animate money mountain
