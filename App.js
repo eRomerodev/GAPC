@@ -2,11 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Home, Mic, Map, RefreshCw } from 'lucide-react-native';
+import { Home, CircleDollarSign, Map, RefreshCw } from 'lucide-react-native';
 
 import { initDB } from './src/database';
 import DashboardScreen from './src/screens/DashboardScreen';
-import VoiceRecordScreen from './src/screens/VoiceRecordScreen';
+import TransactionScreen from './src/screens/TransactionScreen';
 import CommunityMapScreen from './src/screens/CommunityMapScreen';
 import SyncScreen from './src/screens/SyncScreen';
 
@@ -14,14 +14,14 @@ const Tab = createBottomTabNavigator();
 
 const TAB_ICONS = {
   Dashboard: Home,
-  VoiceRecord: Mic,
+  Transaction: CircleDollarSign,
   Map: Map,
   Sync: RefreshCw,
 };
 
 const ACTIVE_COLORS = {
   Dashboard: '#66bb6a',
-  VoiceRecord: '#42a5f5',
+  Transaction: '#42a5f5',
   Map: '#ab47bc',
   Sync: '#ff7043',
 };
@@ -84,7 +84,7 @@ export default function App() {
           })}
         >
           <Tab.Screen name="Dashboard" component={DashboardScreen} />
-          <Tab.Screen name="VoiceRecord" component={VoiceRecordScreen} />
+          <Tab.Screen name="Transaction" component={TransactionScreen} />
           <Tab.Screen name="Map" component={CommunityMapScreen} />
           <Tab.Screen name="Sync" component={SyncScreen} />
         </Tab.Navigator>

@@ -11,6 +11,7 @@ const SPEECH_CONFIG = {
  * Speak text aloud in Spanish.
  */
 export function speak(text) {
+  Speech.stop();
   Speech.speak(text, SPEECH_CONFIG);
 }
 
