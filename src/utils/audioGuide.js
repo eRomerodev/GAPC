@@ -56,24 +56,19 @@ export function warningHaptic() {
  */
 export function speakSaldo(totalAhorro, totalPrestamo, totalPago = 0) {
   const netSavings = totalAhorro - totalPrestamo + totalPago;
-  const dollars = Math.floor(netSavings);
-  const cents = Math.round((netSavings - dollars) * 100);
+  const abs = Math.abs(netSavings);
+  const dollars = Math.floor(abs);
+  const cents = Math.round((abs - dollars) * 100);
 
-  let text = '';
+  let amountText = `${dollars} dólares`;
+  if (cents > 0) amountText += ` con ${cents} centavos`;
+
   if (netSavings > 0) {
-    text = `Tu ahorro total es de ${dollars} dólares`;
-    if (cents > 0) text += ` con ${cents} centavos`;
-    text += `. Muy bien, sigue ahorrando.`;
-    speak(text);
+    speak(`Tu ahorro total es de ${amountText}. Muy bien, sigue ahorrando.`);
   } else if (netSavings === 0) {
     speak('Tu saldo está en cero. Comienza a ahorrar hoy.');
   } else {
-    const absNet = Math.abs(netSavings);
-    const d = Math.floor(absNet);
-    const c = Math.round((absNet - d) * 100);
-    text = `Tienes una deuda de ${d} dólares`;
-    if (c > 0) text += ` con ${c} centavos`;
-    speak(text);
+    speak(`Tus retiros superan tus depósitos por ${amountText}.`);
   }
 }
 

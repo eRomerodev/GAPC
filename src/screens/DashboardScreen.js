@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
+  Text,
   TouchableOpacity,
   Animated,
   ScrollView,
@@ -9,16 +10,15 @@ import {
   StyleSheet,
 } from 'react-native';
 import {
-  Home,
   Banknote,
   TrendingUp,
   TrendingDown,
   Users,
-  Star,
   Volume2,
+  DollarSign,
 } from 'lucide-react-native';
 import { getTotalAhorro, getAllSocias, getAllGrupos } from '../database';
-import { speakOnPress, speakSaldo, speakDashboardGuide, confirmHaptic } from '../utils/audioGuide';
+import { speakOnPress, speakSaldo, confirmHaptic, speak } from '../utils/audioGuide';
 
 const { width } = Dimensions.get('window');
 
@@ -26,7 +26,6 @@ export default function DashboardScreen({ grupoId, sociaId, sociaName }) {
   const [totals, setTotals] = useState({ total_ahorro: 0, total_prestamo: 0, total_pago: 0 });
   const [socias, setSocias] = useState([]);
   const [grupos, setGrupos] = useState([]);
-  const [mountainAnim] = useState(new Animated.Value(0));
   const [pulseAnim] = useState(new Animated.Value(1));
 
   const loadData = useCallback(async () => {
@@ -49,72 +48,29 @@ export default function DashboardScreen({ grupoId, sociaId, sociaName }) {
   );
 
   useEffect(() => {
-    speakDashboardGuide();
+    // Welcome message
+    setTimeout(() => {
+      speak('Bienvenida a tu grupo de ahorro. Toca los botones para escuchar más información.');
+    }, 500);
 
-    // Animate money mountain
-    Animated.timing(mountainAnim, {
-      toValue: 1,
-      duration: 1200,
-      useNativeDriver: true,
-    }).start();
-
-    // Pulse animation for main icon
+    // Pulse animation
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
+        Animated.timing(pulseAnim, { toValue: 1.08, duration: 1000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
       ])
     ).start();
   }, []);
 
   const netSavings = totals.total_ahorro - totals.total_prestamo + totals.total_pago;
-  const isPositive = netSavings >= 0;
-  const billCount = Math.min(Math.abs(netSavings), 20); // Cap visual bills at 20
+  const dollars = Math.floor(Math.abs(netSavings));
+  const cents = Math.round((Math.abs(netSavings) - dollars) * 100);
 
-  // Generate bill icons based on savings level
-  const renderBills = () => {
-    const bills = [];
-    for (let i = 0; i < billCount; i++) {
-      const row = Math.floor(i / 5);
-      const col = i % 5;
-      bills.push(
-        <Animated.View
-          key={i}
-          style={[
-            styles.billIcon,
-            {
-              opacity: mountainAnim,
-              transform: [
-                {
-                  translateY: mountainAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [50, 0],
-                  }),
-                },
-                { scale: mountainAnim },
-              ],
-              left: col * 52 + 10,
-              bottom: row * 36 + 10,
-            },
-          ]}
-        >
-          <Banknote
-            size={40}
-            color={isPositive ? '#43a047' : '#e53935'}
-            strokeWidth={2}
-          />
-        </Animated.View>
-      );
-    }
-    return bills;
+  const formatDollars = (amount) => {
+    const d = Math.floor(Math.abs(amount));
+    const c = Math.round((Math.abs(amount) - d) * 100);
+    if (c > 0) return `${d} dólares con ${c} centavos`;
+    return `${d} dólares`;
   };
 
   return (
@@ -122,99 +78,70 @@ export default function DashboardScreen({ grupoId, sociaId, sociaName }) {
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
     >
-      {/* Main Savings Visual */}
-      <TouchableOpacity
-        style={[
-          styles.mainCard,
-          { backgroundColor: isPositive ? '#1b5e20' : '#b71c1c' },
-        ]}
-        onPress={() => {
-          speakSaldo(totals.total_ahorro, totals.total_prestamo, totals.total_pago);
-          confirmHaptic();
-        }}
-        activeOpacity={0.8}
-        accessibilityLabel="Tu ahorro total"
-        accessibilityHint="Toca para escuchar tu saldo"
-      >
-        {/* Audio indicator */}
-        <View style={styles.audioIndicator}>
-          <Volume2 size={24} color="#ffd54f" />
-        </View>
-
-        {/* Money Mountain */}
-        <View style={styles.mountainContainer}>
-          {renderBills()}
-        </View>
-
-        {/* Trend Icon */}
-        <Animated.View
-          style={[
-            styles.trendContainer,
-            { transform: [{ scale: pulseAnim }] },
-          ]}
-        >
-          {isPositive ? (
-            <TrendingUp size={64} color="#a5d6a7" strokeWidth={3} />
-          ) : (
-            <TrendingDown size={64} color="#ef9a9a" strokeWidth={3} />
-          )}
-        </Animated.View>
-      </TouchableOpacity>
-
-      {/* Quick Stats Row */}
-      <View style={styles.statsRow}>
-        {/* Savings */}
+      {/* GREEN - Total Savings Button */}
+      <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
         <TouchableOpacity
-          style={[styles.statCard, styles.savingsCard]}
-          onPress={() => speakOnPress(`Ahorro total: ${totals.total_ahorro} billetes`)}
+          style={styles.totalButton}
+          onPress={() => {
+            confirmHaptic();
+            speakSaldo(totals.total_ahorro, totals.total_prestamo, totals.total_pago);
+          }}
           activeOpacity={0.7}
         >
-          <View style={styles.statIconCircle}>
-            <TrendingUp size={32} color="#fff" strokeWidth={2.5} />
+          <View style={styles.totalIconCircle}>
+            <DollarSign size={36} color="#fff" strokeWidth={2.5} />
           </View>
-          {/* Visual bill stack */}
-          <View style={styles.miniStack}>
-            {Array.from({ length: Math.min(totals.total_ahorro, 5) }).map((_, i) => (
-              <Banknote
-                key={i}
-                size={20}
-                color="#c8e6c9"
-                style={{ marginTop: i > 0 ? -8 : 0 }}
-              />
-            ))}
-          </View>
+          <Text style={styles.totalAmountText}>
+            ${netSavings.toFixed(2)}
+          </Text>
+          <Volume2 size={24} color="rgba(255,255,255,0.7)" style={{ position: 'absolute', top: 18, right: 18 }} />
+        </TouchableOpacity>
+      </Animated.View>
+
+      {/* Stats Row - Deposits and Withdrawals */}
+      <View style={styles.statsRow}>
+        {/* GREEN - Deposits */}
+        <TouchableOpacity
+          style={styles.depositButton}
+          onPress={() => {
+            confirmHaptic();
+            speakOnPress(`Depósitos totales: ${formatDollars(totals.total_ahorro)}.`);
+          }}
+          activeOpacity={0.7}
+        >
+          <TrendingUp size={30} color="#fff" strokeWidth={2.5} />
+          <Text style={styles.statAmount}>${totals.total_ahorro.toFixed(2)}</Text>
+          <Volume2 size={16} color="rgba(255,255,255,0.5)" />
         </TouchableOpacity>
 
-        {/* Debts */}
+        {/* RED - Withdrawals (retiros, NOT prestamos) */}
         <TouchableOpacity
-          style={[styles.statCard, styles.debtCard]}
-          onPress={() => speakOnPress(`Préstamos: ${totals.total_prestamo} billetes`)}
+          style={styles.withdrawButton}
+          onPress={() => {
+            confirmHaptic();
+            speakOnPress(`Retiros totales: ${formatDollars(totals.total_prestamo)}.`);
+          }}
           activeOpacity={0.7}
         >
-          <View style={[styles.statIconCircle, { backgroundColor: '#c62828' }]}>
-            <TrendingDown size={32} color="#fff" strokeWidth={2.5} />
-          </View>
-          <View style={styles.miniStack}>
-            {Array.from({ length: Math.min(totals.total_prestamo, 5) }).map((_, i) => (
-              <Banknote
-                key={i}
-                size={20}
-                color="#ffcdd2"
-                style={{ marginTop: i > 0 ? -8 : 0 }}
-              />
-            ))}
-          </View>
+          <TrendingDown size={30} color="#fff" strokeWidth={2.5} />
+          <Text style={styles.statAmount}>${totals.total_prestamo.toFixed(2)}</Text>
+          <Volume2 size={16} color="rgba(255,255,255,0.5)" />
         </TouchableOpacity>
       </View>
 
-      {/* Members Section */}
+      {/* Members Section - shows count and names */}
       <TouchableOpacity
         style={styles.membersCard}
-        onPress={() => speakOnPress(`Hay ${socias.length} socias en tus grupos`)}
+        onPress={() => {
+          const names = socias.map(s => s.nombre_audio).join(', ');
+          speakOnPress(`Hay ${socias.length} participantes en tu grupo. Los participantes son: ${names || 'ninguno aún'}.`);
+        }}
         activeOpacity={0.7}
       >
         <View style={styles.membersHeader}>
-          <Users size={36} color="#ffd54f" strokeWidth={2} />
+          <Users size={32} color="#ffd54f" strokeWidth={2} />
+          <Text style={styles.membersCount}>{socias.length}</Text>
+          <Volume2 size={18} color="#ffd54f" style={{ marginLeft: 'auto' }} />
         </View>
         <View style={styles.avatarRow}>
           {socias.slice(0, 8).map((s, i) => (
@@ -222,52 +149,18 @@ export default function DashboardScreen({ grupoId, sociaId, sociaName }) {
               key={s.id}
               style={[
                 styles.avatar,
-                { backgroundColor: s.avatar_color, marginLeft: i > 0 ? -12 : 0 },
+                { backgroundColor: s.avatar_color, marginLeft: i > 0 ? -10 : 0 },
               ]}
             />
           ))}
           {socias.length > 8 && (
             <View style={[styles.avatar, styles.moreAvatar]}>
-              <Users size={16} color="#fff" />
+              <Text style={styles.moreText}>+{socias.length - 8}</Text>
             </View>
           )}
         </View>
       </TouchableOpacity>
 
-      {/* Groups with Stars */}
-      {grupos.map((g) => (
-        <TouchableOpacity
-          key={g.id}
-          style={styles.groupCard}
-          onPress={() =>
-            speakOnPress(
-              `${g.nombre_audio}. ${g.miembros} miembros. Calificación: ${g.rating} estrellas.`
-            )
-          }
-          activeOpacity={0.7}
-        >
-          <View style={styles.groupIcon}>
-            <Users size={28} color="#ffd54f" />
-          </View>
-          <View style={styles.groupStars}>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Star
-                key={i}
-                size={20}
-                color={i < Math.round(g.rating) ? '#ffd54f' : '#333'}
-                fill={i < Math.round(g.rating) ? '#ffd54f' : 'transparent'}
-              />
-            ))}
-          </View>
-          <View style={styles.groupMembers}>
-            {Array.from({ length: Math.min(g.miembros, 6) }).map((_, i) => (
-              <View key={i} style={styles.miniDot} />
-            ))}
-          </View>
-        </TouchableOpacity>
-      ))}
-
-      {/* Bottom Spacer */}
       <View style={{ height: 100 }} />
     </ScrollView>
   );
@@ -282,72 +175,63 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 60,
   },
-  mainCard: {
+  // Total button (single green)
+  totalButton: {
+    backgroundColor: '#2e7d32',
     borderRadius: 24,
-    padding: 24,
-    minHeight: 260,
+    padding: 28,
+    alignItems: 'center',
     marginBottom: 16,
-    overflow: 'hidden',
     elevation: 8,
-    shadowColor: '#000',
+    shadowColor: '#43a047',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
   },
-  audioIndicator: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 20,
-    padding: 8,
-  },
-  mountainContainer: {
-    height: 180,
-    position: 'relative',
-  },
-  billIcon: {
-    position: 'absolute',
-  },
-  trendContainer: {
+  totalIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: -20,
+    marginBottom: 12,
   },
+  totalAmountText: {
+    color: '#fff',
+    fontSize: 36,
+    fontWeight: '800',
+  },
+  // Stats row
   statsRow: {
     flexDirection: 'row',
     gap: 12,
     marginBottom: 16,
   },
-  statCard: {
+  depositButton: {
     flex: 1,
+    backgroundColor: '#43a047',
     borderRadius: 20,
-    padding: 20,
+    padding: 18,
     alignItems: 'center',
+    gap: 8,
     elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
   },
-  savingsCard: {
-    backgroundColor: '#2e7d32',
-  },
-  debtCard: {
-    backgroundColor: '#c62828',
-  },
-  statIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#388e3c',
-    justifyContent: 'center',
+  withdrawButton: {
+    flex: 1,
+    backgroundColor: '#e53935',
+    borderRadius: 20,
+    padding: 18,
     alignItems: 'center',
-    marginBottom: 12,
+    gap: 8,
+    elevation: 4,
   },
-  miniStack: {
-    alignItems: 'center',
-    minHeight: 40,
+  statAmount: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
   },
+  // Members
   membersCard: {
     backgroundColor: '#161b22',
     borderRadius: 20,
@@ -359,17 +243,23 @@ const styles = StyleSheet.create({
   membersHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
+    gap: 10,
+  },
+  membersCount: {
+    color: '#e6edf3',
+    fontSize: 28,
+    fontWeight: '800',
   },
   avatarRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: 8,
+    paddingLeft: 4,
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     borderWidth: 3,
     borderColor: '#161b22',
   },
@@ -377,41 +267,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#21253b',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: -12,
+    marginLeft: -10,
   },
-  groupCard: {
-    backgroundColor: '#161b22',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#21253b',
-  },
-  groupIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#21253b',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  groupStars: {
-    flexDirection: 'row',
-    flex: 1,
-    gap: 2,
-  },
-  groupMembers: {
-    flexDirection: 'row',
-    gap: 4,
-    marginLeft: 8,
-  },
-  miniDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#66bb6a',
+  moreText: {
+    color: '#8b949e',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

@@ -1,13 +1,11 @@
 /**
- * Simulated NLP service.
- * In production, this would connect to a real speech-to-text + NLP backend.
- * For now, it parses simple Spanish phrases about savings.
+ * NLP service for voice command parsing.
+ * Parses Spanish phrases about savings and withdrawals.
  * 
  * Supported patterns:
- * - "Ahorré X billetes" → { action: 'ahorro', monto: X }
- * - "Presté X billetes" → { action: 'prestamo', monto: X }
- * - "Pagué X billetes" → { action: 'pago', monto: X }
- * - Any number mention → { action: 'ahorro', monto: X }
+ * - "Ahorré X" / "ahorre X" / "deposité X" → { action: 'ahorro', monto: X }
+ * - "Retiré X" / "retire X" / "saqué X"   → { action: 'prestamo', monto: X }
+ * - "Pagué X" / "pague X"                 → { action: 'pago', monto: X }
  */
 
 const WORD_TO_NUMBER = {
@@ -25,26 +23,40 @@ const WORD_TO_NUMBER = {
   'doce': 12,
   'quince': 15,
   'veinte': 20,
+  'veinticinco': 25,
   'treinta': 30,
+  'cuarenta': 40,
   'cincuenta': 50,
   'cien': 100,
+  'ciento': 100,
 };
 
 /**
- * Parse a transcribed voice note into a savings action.
- * @param {string} text - The transcribed text
- * @returns {{ action: string, monto: number, confidence: number } | null}
+ * Parse a transcribed voice command into a savings action.
  */
 export function parseVoiceCommand(text) {
   if (!text || typeof text !== 'string') return null;
 
   const lower = text.toLowerCase().trim();
 
-  // Detect action type
+  // Detect action type - check for RETIRO/RETIRE first (specific), then ahorro (default)
   let action = 'ahorro'; // default
-  if (lower.includes('presté') || lower.includes('preste') || lower.includes('préstamo') || lower.includes('prestamo')) {
+  if (
+    lower.includes('retiré') || lower.includes('retire') ||
+    lower.includes('retiro') || lower.includes('saqué') ||
+    lower.includes('saque') || lower.includes('quité') ||
+    lower.includes('quite') || lower.includes('sacó')
+  ) {
+    action = 'prestamo'; // maps to 'retiro' in the UI
+  } else if (
+    lower.includes('presté') || lower.includes('preste') ||
+    lower.includes('préstamo') || lower.includes('prestamo')
+  ) {
     action = 'prestamo';
-  } else if (lower.includes('pagué') || lower.includes('pague') || lower.includes('pago')) {
+  } else if (
+    lower.includes('pagué') || lower.includes('pague') ||
+    lower.includes('pago')
+  ) {
     action = 'pago';
   }
 
@@ -77,35 +89,18 @@ export function parseVoiceCommand(text) {
 }
 
 /**
- * Simulate transcription from audio (demo purposes).
- * In production, this would send the audio file to a speech-to-text API.
- * Returns a random simulated phrase.
+ * Simulate transcription - includes BOTH ahorro AND retiro phrases equally.
  */
 export function simulateTranscription() {
   const phrases = [
-    'Ahorré 3 billetes',
-    'Ahorré 5 billetes',
-    'Ahorré 2 billetes',
-    'Pagué un billete',
-    'Ahorré diez billetes',
-    'Ahorré 7 billetes',
-    'Presté dos billetes',
-    'Ahorré cuatro billetes',
+    'Ahorré 3 dólares',
+    'Ahorré 5 dólares',
+    'Retiré 2 dólares',
+    'Retiré 10 dólares',
+    'Ahorré 7 dólares',
+    'Retiré 5 dólares',
+    'Ahorré diez dólares',
+    'Retiré cuatro dólares',
   ];
   return phrases[Math.floor(Math.random() * phrases.length)];
-}
-
-/**
- * Get a human-readable summary of a parsed command.
- */
-export function getCommandSummary(parsed) {
-  if (!parsed) return 'No se entendió el comando';
-
-  const actionNames = {
-    ahorro: 'Ahorro',
-    prestamo: 'Préstamo',
-    pago: 'Pago',
-  };
-
-  return `${actionNames[parsed.action]}: ${parsed.monto} billete${parsed.monto > 1 ? 's' : ''}`;
 }

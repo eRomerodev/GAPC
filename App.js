@@ -3,7 +3,7 @@ import { View, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Home, CircleDollarSign, Map, RefreshCw } from 'lucide-react-native';
+import { Home, CircleDollarSign, Map } from 'lucide-react-native';
 
 import { initDB } from './src/database';
 import CommunityListScreen from './src/screens/CommunityListScreen';
@@ -12,7 +12,6 @@ import FaceVerifyScreen from './src/screens/FaceVerifyScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import TransactionScreen from './src/screens/TransactionScreen';
 import CommunityMapScreen from './src/screens/CommunityMapScreen';
-import SyncScreen from './src/screens/SyncScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -21,14 +20,18 @@ const TAB_ICONS = {
   Dashboard: Home,
   Transaction: CircleDollarSign,
   Map: Map,
-  Sync: RefreshCw,
 };
 
 const ACTIVE_COLORS = {
   Dashboard: '#66bb6a',
-  Transaction: '#42a5f5',
-  Map: '#ab47bc',
-  Sync: '#ff7043',
+  Transaction: '#ffd54f',
+  Map: '#42a5f5',
+};
+
+const INACTIVE_COLORS = {
+  Dashboard: '#66bb6a',
+  Transaction: '#ffd54f',
+  Map: '#42a5f5',
 };
 
 function MainTabs({ route }) {
@@ -43,20 +46,21 @@ function MainTabs({ route }) {
         tabBarIcon: ({ focused }) => {
           const IconComponent = TAB_ICONS[route.name];
           const activeColor = ACTIVE_COLORS[route.name];
+          const inactiveColor = INACTIVE_COLORS[route.name];
           return (
             <View
               style={[
                 styles.tabIconContainer,
                 focused && {
-                  backgroundColor: activeColor + '22',
+                  backgroundColor: activeColor + '33',
                   borderColor: activeColor,
                 },
               ]}
             >
               <IconComponent
-                size={focused ? 32 : 26}
-                color={focused ? activeColor : '#555'}
-                strokeWidth={focused ? 2.5 : 1.5}
+                size={focused ? 34 : 30}
+                color={focused ? activeColor : inactiveColor + '88'}
+                strokeWidth={focused ? 2.5 : 2}
               />
             </View>
           );
@@ -84,7 +88,6 @@ function MainTabs({ route }) {
         )}
       </Tab.Screen>
       <Tab.Screen name="Map" component={CommunityMapScreen} />
-      <Tab.Screen name="Sync" component={SyncScreen} />
     </Tab.Navigator>
   );
 }
@@ -156,9 +159,9 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   tabIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    width: 60,
+    height: 60,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,

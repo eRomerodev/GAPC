@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,9 @@ import {
   ScrollView,
   Animated,
 } from 'react-native';
-import { Check, X, CircleDollarSign, Coins, TrendingUp, TrendingDown, Mic } from 'lucide-react-native';
-import { useAudioRecorder, requestRecordingPermissionsAsync, setAudioModeAsync, RecordingPresets } from 'expo-audio';
-import { speak, confirmHaptic, errorHaptic, speakOnPress } from '../utils/audioGuide';
+import { Check, X, CircleDollarSign, Coins, TrendingUp, TrendingDown, Mic, Volume2 } from 'lucide-react-native';
+import { Audio } from 'expo-av';
+import { speak, confirmHaptic, errorHaptic, speakOnPress, stopSpeaking } from '../utils/audioGuide';
 import { parseVoiceCommand, simulateTranscription } from '../utils/nlpService';
 import { addAhorro } from '../database';
 
@@ -21,11 +21,25 @@ const COINS = [
   { value: 0.25, label: '25¢', speakAs: '25 centavos' },
 ];
 
-export default function TransactionScreen() {
+export default function TransactionScreen({ grupoId, sociaId, sociaName }) {
   const [total, setTotal] = useState(0);
   const [scaleAnim] = useState(new Animated.Value(1));
   const [txType, setTxType] = useState('ahorro');
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const [isRecording, setIsRecording] = useState(false);
+  const recordingRef = useRef(null);
+
+  // Voice guidance on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      speak(
+        'Aquí puedes registrar tus ahorros y retiros. ' +
+        'Selecciona la cantidad que ahorraste o retiraste usando los botones de billetes y monedas. ' +
+        'Luego dale al botón verde grande para efectuar la operación. ' +
+        'También puedes mantener presionado el botón del micrófono para decir la cantidad por voz.'
+      );
+    }, 500);
+    return () => clearTimeout(timer);
+  }, []);
 
   const animateTotal = () => {
     scaleAnim.setValue(1.2);
@@ -38,7 +52,6 @@ export default function TransactionScreen() {
 
   const addAmount = (amount, isCoin = false, coinSpeech = '') => {
     const newTotal = total + amount;
-    // Fix floating point math issues
     const fixedTotal = Math.round(newTotal * 100) / 100;
     setTotal(fixedTotal);
     animateTotal();
@@ -54,7 +67,7 @@ export default function TransactionScreen() {
     const dollars = Math.floor(total);
     const cents = Math.round((total - dollars) * 100);
     
-    let text = txType === 'ahorro' ? `Total a guardar: ` : `Total a retirar: `;
+    let text = txType === 'ahorro' ? 'Total a depositar: ' : 'Total a retirar: ';
     if (dollars > 0) text += `${dollars} ${dollars === 1 ? 'dólar' : 'dólares'} `;
     if (cents > 0) text += `con ${cents} centavos`;
     if (dollars === 0 && cents === 0) text = 'Total en cero.';
@@ -64,29 +77,45 @@ export default function TransactionScreen() {
 
   const startVoice = async () => {
     try {
-      const { granted } = await requestRecordingPermissionsAsync();
-      if (!granted) {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
         speak('Permiso denegado para el micrófono');
         return;
       }
-      await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      audioRecorder.prepareToRecordAsync();
-      audioRecorder.record();
+
+      stopSpeaking();
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.startAsync();
+      recordingRef.current = recording;
+      setIsRecording(true);
       confirmHaptic();
-      // Optional: speak('Escuchando...') - but might bleed into the recording
     } catch (err) {
-      console.error(err);
+      console.error('[Transaction] Record error:', err);
     }
   };
 
-  const stopVoice = () => {
-    if (audioRecorder.isRecording) {
-      audioRecorder.stop();
+  const stopVoice = async () => {
+    if (!recordingRef.current) return;
+
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      recordingRef.current = null;
+      setIsRecording(false);
       confirmHaptic();
-      
-      // Simulate NLP logic with a small delay
+
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+
+      // Use simulated NLP for now
       setTimeout(() => {
-        const textStr = simulateTranscription(); // e.g. "Ahorré 3 billetes"
+        const textStr = simulateTranscription();
         const parsed = parseVoiceCommand(textStr);
         if (parsed) {
           addAmount(parsed.monto);
@@ -95,27 +124,37 @@ export default function TransactionScreen() {
           } else {
             setTxType('ahorro');
           }
-          speakOnPress(`Entendido. ${parsed.action === 'prestamo' ? 'Retira' : 'Ahorra'} ${parsed.monto} dólares.`);
+          const actionWord = (parsed.action === 'prestamo') ? 'Retiro' : 'Depósito';
+          speakOnPress(`Entendido. ${actionWord} de ${parsed.monto} dólares.`);
         } else {
           errorHaptic();
-          speak('No entendí el audio. Usa los botones por favor.');
+          speak('No entendí. Usa los botones para seleccionar la cantidad.');
         }
       }, 800);
+    } catch (err) {
+      console.error('[Transaction] Stop record error:', err);
+      setIsRecording(false);
     }
   };
 
   const handleSave = async () => {
     if (total <= 0) {
       errorHaptic();
-      speak('Agrega dinero antes de guardar.');
+      speak('Agrega una cantidad antes de guardar.');
       return;
     }
 
     try {
-      // Default to Socia 1, Grupo 1 for the demo
-      await addAhorro(1, 1, total, txType);
+      const gId = grupoId || 1;
+      const sId = sociaId || 1;
+      await addAhorro(sId, gId, total, txType);
       confirmHaptic();
-      speak(`${txType === 'ahorro' ? 'Ahorro' : 'Retiro'} de ${total} guardado correctamente.`);
+      const actionWord = txType === 'ahorro' ? 'Depósito' : 'Retiro';
+      const dollars = Math.floor(total);
+      const cents = Math.round((total - dollars) * 100);
+      let amountText = `${dollars} dólares`;
+      if (cents > 0) amountText += ` con ${cents} centavos`;
+      speak(`${actionWord} de ${amountText} guardado correctamente.`);
       setTotal(0);
     } catch (err) {
       console.error('[Transaction] Save error:', err);
@@ -131,7 +170,7 @@ export default function TransactionScreen() {
     }
     setTotal(0);
     errorHaptic();
-    speak('Borrando total. Empezar de nuevo.');
+    speak('Borrando total. Empieza de nuevo.');
   };
 
   return (
@@ -140,97 +179,85 @@ export default function TransactionScreen() {
       <TouchableOpacity 
         style={styles.totalContainer} 
         onPress={playTotalAudio}
-        accessibilityLabel="Total acumulado"
       >
         <Text style={styles.totalLabel}>
-          {txType === 'ahorro' ? 'Total a guardar' : 'Total a retirar'}
+          {txType === 'ahorro' ? 'Total a depositar' : 'Total a retirar'}
         </Text>
         <Animated.Text style={[styles.totalAmount, { transform: [{ scale: scaleAnim }] }]}>
           $ {total.toFixed(2)}
         </Animated.Text>
+        <Volume2 size={20} color="#ffd54f" style={{ position: 'absolute', top: 16, right: 16 }} />
       </TouchableOpacity>
 
       {/* Transaction Type Toggle */}
       <View style={styles.typeSelector}>
         <TouchableOpacity 
           style={[styles.typeBtn, txType === 'ahorro' && styles.typeBtnActiveAhorro]}
-          onPress={() => { setTxType('ahorro'); speakOnPress('Modo Ahorrar dinero'); }}
+          onPress={() => { setTxType('ahorro'); speakOnPress('Modo depósito. Selecciona la cantidad.'); }}
         >
           <TrendingUp color={txType === 'ahorro' ? '#fff' : '#66bb6a'} size={32} />
-          <Text style={[styles.typeText, txType === 'ahorro' && {color: '#fff'}]}>Ahorrar</Text>
         </TouchableOpacity>
         
         <TouchableOpacity 
           style={[styles.typeBtn, txType === 'prestamo' && styles.typeBtnActiveRetiro]}
-          onPress={() => { setTxType('prestamo'); speakOnPress('Modo Retirar dinero'); }}
+          onPress={() => { setTxType('prestamo'); speakOnPress('Modo retiro. Selecciona la cantidad.'); }}
         >
           <TrendingDown color={txType === 'prestamo' ? '#fff' : '#ef5350'} size={32} />
-          <Text style={[styles.typeText, txType === 'prestamo' && {color: '#fff'}]}>Retirar</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Bills Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <CircleDollarSign color="#66bb6a" size={24} />
-            <Text style={styles.sectionTitle}>Billetes</Text>
-          </View>
-          <View style={styles.grid}>
-            {BILLS.map((bill) => (
-              <TouchableOpacity
-                key={`bill-${bill}`}
-                style={[styles.moneyButton, styles.billButton]}
-                onPress={() => addAmount(bill)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.billText}>$ {bill}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+        {/* Bills */}
+        <View style={styles.grid}>
+          {BILLS.map((bill) => (
+            <TouchableOpacity
+              key={`bill-${bill}`}
+              style={[styles.moneyButton, styles.billButton]}
+              onPress={() => addAmount(bill)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.billText}>$ {bill}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* Coins Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Coins color="#ffd54f" size={24} />
-            <Text style={styles.sectionTitle}>Monedas</Text>
-          </View>
-          <View style={styles.grid}>
-            {COINS.map((coin) => (
-              <TouchableOpacity
-                key={`coin-${coin.value}`}
-                style={[styles.moneyButton, styles.coinButton]}
-                onPress={() => addAmount(coin.value, true, coin.speakAs)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.coinText}>{coin.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+        {/* Coins */}
+        <View style={styles.coinGrid}>
+          {COINS.map((coin) => (
+            <TouchableOpacity
+              key={`coin-${coin.value}`}
+              style={[styles.moneyButton, styles.coinButton]}
+              onPress={() => addAmount(coin.value, true, coin.speakAs)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.coinText}>{coin.label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         {/* Action Buttons */}
         <View style={styles.actions}>
-          <TouchableOpacity style={[styles.actionBtn, styles.clearBtn]} onPress={handleClear}>
-            <X color="#fff" size={40} strokeWidth={3} />
+          {/* RED - Clear */}
+          <TouchableOpacity style={styles.clearBtn} onPress={handleClear}>
+            <X color="#fff" size={36} strokeWidth={3} />
           </TouchableOpacity>
+
+          {/* BLUE - Mic */}
           <TouchableOpacity 
-            style={[
-              styles.actionBtn, 
-              styles.micBtn,
-              audioRecorder.isRecording && styles.micBtnRecording
-            ]} 
+            style={[styles.micBtn, isRecording && styles.micBtnRecording]} 
             onPressIn={startVoice}
             onPressOut={stopVoice}
-            accessibilityLabel="Mantener presionado para hablar"
           >
-            <Mic color="#fff" size={40} strokeWidth={3} />
+            <Mic color="#fff" size={36} strokeWidth={3} />
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn, styles.saveBtn]} onPress={handleSave}>
+
+          {/* GREEN - Save (BIG) */}
+          <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
             <Check color="#fff" size={48} strokeWidth={3} />
           </TouchableOpacity>
         </View>
+
+        <View style={{ height: 100 }} />
       </ScrollView>
     </View>
   );
@@ -244,30 +271,34 @@ const styles = StyleSheet.create({
   },
   totalContainer: {
     backgroundColor: '#161b22',
-    padding: 24,
+    padding: 20,
     marginHorizontal: 16,
-    borderRadius: 24,
+    borderRadius: 20,
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#30363d',
     elevation: 8,
   },
   totalLabel: {
     color: '#8b949e',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 6,
+  },
+  totalAmount: {
+    color: '#66bb6a',
+    fontSize: 48,
+    fontWeight: 'bold',
   },
   typeSelector: {
     flexDirection: 'row',
     marginHorizontal: 16,
-    marginBottom: 20,
+    marginBottom: 16,
     gap: 12,
   },
   typeBtn: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,
@@ -277,105 +308,94 @@ const styles = StyleSheet.create({
     backgroundColor: '#161b22',
   },
   typeBtnActiveAhorro: {
-    backgroundColor: '#1b5e20',
-    borderColor: '#2e7d32',
+    backgroundColor: '#2e7d32',
+    borderColor: '#43a047',
   },
   typeBtnActiveRetiro: {
-    backgroundColor: '#b71c1c',
+    backgroundColor: '#c62828',
     borderColor: '#e53935',
-  },
-  typeText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#8b949e',
-    marginLeft: 8,
-  },
-  totalAmount: {
-    color: '#66bb6a',
-    fontSize: 56,
-    fontWeight: 'bold',
   },
   scrollContent: {
     paddingHorizontal: 16,
     paddingBottom: 40,
   },
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    color: '#c9d1d9',
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginLeft: 12,
-  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
     justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  coinGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+    marginBottom: 20,
   },
   moneyButton: {
-    width: '48%',
-    height: 80,
+    height: 70,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 4,
   },
   billButton: {
+    width: '48%',
     backgroundColor: '#1b5e20',
     borderWidth: 2,
     borderColor: '#2e7d32',
   },
   coinButton: {
+    flex: 1,
     backgroundColor: '#b8860b',
     borderWidth: 2,
     borderColor: '#ffd54f',
-    borderRadius: 40, // Make them circular
+    borderRadius: 35,
   },
   billText: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: 'bold',
-  },
-  coinText: {
     color: '#fff',
     fontSize: 28,
     fontWeight: 'bold',
   },
+  coinText: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
   actions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-    paddingHorizontal: 10,
+    gap: 12,
+    marginTop: 8,
   },
-  actionBtn: {
-    height: 80,
-    borderRadius: 40,
+  clearBtn: {
+    width: 70,
+    height: 70,
+    borderRadius: 20,
+    backgroundColor: '#e53935',
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 6,
   },
-  clearBtn: {
-    backgroundColor: '#d32f2f',
-    width: 80,
-  },
   micBtn: {
-    backgroundColor: '#1976d2',
-    width: 80,
-    marginHorizontal: 16,
+    width: 70,
+    height: 70,
+    borderRadius: 20,
+    backgroundColor: '#1e88e5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 6,
   },
   micBtnRecording: {
     backgroundColor: '#ef5350',
     transform: [{ scale: 1.1 }],
   },
   saveBtn: {
-    backgroundColor: '#2e7d32',
     flex: 1,
+    height: 70,
+    borderRadius: 20,
+    backgroundColor: '#43a047',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 6,
   },
 });

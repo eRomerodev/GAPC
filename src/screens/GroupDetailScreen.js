@@ -22,7 +22,7 @@ import {
   ArrowLeft,
   Check,
 } from 'lucide-react-native';
-import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
+import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getSociasByGrupo, getAllGrupos, addSocia, getTotalAhorro, getAhorrosByGrupo } from '../database';
 import { speakOnPress, confirmHaptic, speak, stopSpeaking } from '../utils/audioGuide';
@@ -41,15 +41,13 @@ export default function GroupDetailScreen({ navigation, route }) {
   const [movimientos, setMovimientos] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const isRecordingRef = useRef(false);
   const [recordedUri, setRecordedUri] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [pulseAnim] = useState(new Animated.Value(1));
   const pulseRef = useRef(null);
   const playerRef = useRef(null);
   const autoStopRef = useRef(null);
-
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recordingRef = useRef(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -82,7 +80,9 @@ export default function GroupDetailScreen({ navigation, route }) {
           `Grupo ${grupo.nombre_audio}. ` +
           `Si eres parte del grupo, selecciona tu foto. ` +
           `Si eres miembro nuevo y no aparece tu foto, haz click en el icono verde. ` +
-          `Si no eres miembro de este grupo, haz click en el botón azul.`
+          `Si no eres miembro de este grupo, haz click en el botón azul. ` +
+          `Si quieres saber el total, oprime el botón amarillo. ` +
+          `Si quieres escuchar el historial de movimientos, selecciona los botones aqua. Los que están más arriba son los más recientes.`
         );
       }, 800);
       return () => clearTimeout(timer);
@@ -119,22 +119,31 @@ export default function GroupDetailScreen({ navigation, route }) {
     navigation.goBack();
   };
 
-  // === RECORDING FUNCTIONS ===
+  // === RECORDING FUNCTIONS using expo-av ===
   const startRecording = async () => {
     try {
-      const status = await AudioModule.requestRecordingPermissionsAsync();
-      if (!status.granted) {
+      // Request permission
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
         speak('Se necesita permiso del micrófono.');
         return;
       }
+
+      // Stop any speech first
       stopSpeaking();
       await new Promise(resolve => setTimeout(resolve, 500));
 
+      // Configure audio mode for recording
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
       setRecordedUri(null);
       setIsRecording(true);
-      isRecordingRef.current = true;
       confirmHaptic();
 
+      // Pulse animation
       pulseRef.current = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.2, duration: 600, useNativeDriver: true }),
@@ -143,15 +152,21 @@ export default function GroupDetailScreen({ navigation, route }) {
       );
       pulseRef.current.start();
 
-      recorder.record();
-      console.log('[GroupDetail] Recording started');
+      // Create and start recording
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.startAsync();
+      recordingRef.current = recording;
+      console.log('[GroupDetail] Recording started with expo-av');
 
+      // Auto-stop after 4 seconds
       autoStopRef.current = setTimeout(() => {
         doStopRecording();
       }, 4000);
     } catch (e) {
       console.log('[GroupDetail] Error starting recording:', e);
       setIsRecording(false);
+      speak('Error al iniciar grabación.');
     }
   };
 
@@ -161,12 +176,21 @@ export default function GroupDetailScreen({ navigation, route }) {
         clearTimeout(autoStopRef.current);
         autoStopRef.current = null;
       }
-      console.log('[GroupDetail] Calling recorder.stop()...');
-      await recorder.stop();
-      console.log('[GroupDetail] recorder.stop() completed');
 
+      const recording = recordingRef.current;
+      if (!recording) {
+        console.log('[GroupDetail] No recording object');
+        setIsRecording(false);
+        return;
+      }
+
+      console.log('[GroupDetail] Stopping recording...');
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      console.log('[GroupDetail] Recording URI:', uri);
+
+      recordingRef.current = null;
       setIsRecording(false);
-      isRecordingRef.current = false;
       confirmHaptic();
       setTimeout(() => confirmHaptic(), 200);
 
@@ -175,17 +199,18 @@ export default function GroupDetailScreen({ navigation, route }) {
         pulseAnim.setValue(1);
       }
 
-      const recordingUri = recorder.uri;
-      console.log('[GroupDetail] Recording stopped, URI:', recordingUri);
+      // Reset audio mode
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
 
-      if (!recordingUri) {
+      if (!uri) {
         setTimeout(() => speak('No se grabó. Intenta de nuevo.'), 500);
         return;
       }
 
+      // Save to permanent location
       const fileName = `nombre_${Date.now()}.m4a`;
       const permanentUri = FileSystem.documentDirectory + fileName;
-      await FileSystem.copyAsync({ from: recordingUri, to: permanentUri });
+      await FileSystem.copyAsync({ from: uri, to: permanentUri });
 
       console.log('[GroupDetail] Recording saved to:', permanentUri);
       setRecordedUri(permanentUri);
@@ -193,6 +218,7 @@ export default function GroupDetailScreen({ navigation, route }) {
     } catch (e) {
       console.log('[GroupDetail] Error stopping recording:', e);
       setIsRecording(false);
+      recordingRef.current = null;
       if (pulseRef.current) {
         pulseRef.current.stop();
         pulseAnim.setValue(1);
@@ -207,10 +233,15 @@ export default function GroupDetailScreen({ navigation, route }) {
     if (!recordedUri) return;
     try {
       setIsPlaying(true);
-      const { createAudioPlayer } = require('expo-audio');
-      playerRef.current = createAudioPlayer({ uri: recordedUri });
-      playerRef.current.play();
-      setTimeout(() => setIsPlaying(false), 3000);
+      const { sound } = await Audio.Sound.createAsync({ uri: recordedUri });
+      playerRef.current = sound;
+      await sound.playAsync();
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.didJustFinish) {
+          setIsPlaying(false);
+          sound.unloadAsync();
+        }
+      });
     } catch (e) {
       console.log('[GroupDetail] Error playing:', e);
       setIsPlaying(false);
