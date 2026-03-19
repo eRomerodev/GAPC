@@ -1,11 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Image,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -15,23 +14,31 @@ import {
   Camera,
   Check,
   X,
-  ShieldCheck,
-  RefreshCw,
 } from 'lucide-react-native';
 import { updateSociaFoto } from '../database';
-import { speakOnPress, confirmHaptic } from '../utils/audioGuide';
+import { confirmHaptic, speak } from '../utils/audioGuide';
 
 export default function FaceVerifyScreen({ navigation, route }) {
-  const { grupoId, sociaId, sociaName, sociaFotoUri } = route.params;
+  const { grupoId, sociaId, sociaName, fotoUri } = route.params;
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedPhoto, setCapturedPhoto] = useState(null);
-  const [isComparing, setIsComparing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const cameraRef = useRef(null);
 
-  const isFirstTime = !sociaFotoUri;
+  const isFirstTime = !fotoUri;
 
-  // Take photo
+  // Voice guidance on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (isFirstTime) {
+        speak('Toma tu foto para registrarte. Presiona el botón de la cámara.');
+      } else {
+        speak('Muestra tu rostro a la cámara y toma la foto.');
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, []);
+
   const takePhoto = async () => {
     if (!cameraRef.current) return;
     try {
@@ -42,25 +49,22 @@ export default function FaceVerifyScreen({ navigation, route }) {
       });
       setCapturedPhoto(photo.uri);
 
-      if (isFirstTime) {
-        speakOnPress('Foto tomada. Confirma para guardar tu foto de registro.');
-      } else {
-        setIsComparing(true);
-        speakOnPress('Foto tomada. Confirma que eres tú para continuar.');
-      }
+      // Voice guidance with big buttons
+      setTimeout(() => {
+        speak('Selecciona el botón verde si eres el mismo de la foto. Selecciona el botón rojo si no eres el de la foto.');
+      }, 500);
     } catch (e) {
       console.log('[FaceVerify] Error taking photo:', e);
-      Alert.alert('Error', 'No se pudo tomar la foto.');
+      speak('No se pudo tomar la foto. Intenta de nuevo.');
     }
   };
 
-  // Save photo and proceed
+  // GREEN button - confirm identity
   const handleConfirm = async () => {
     try {
       setIsSaving(true);
       confirmHaptic();
 
-      // Save photo permanently
       const fileName = `socia_${sociaId}_${Date.now()}.jpg`;
       const permanentUri = FileSystem.documentDirectory + fileName;
 
@@ -69,12 +73,10 @@ export default function FaceVerifyScreen({ navigation, route }) {
         to: permanentUri,
       });
 
-      // Update database with photo URI
       await updateSociaFoto(sociaId, permanentUri);
 
-      speakOnPress(`Bienvenida, ${sociaName}.`);
+      speak(`Bienvenida, ${sociaName}.`);
 
-      // Navigate to main tabs
       navigation.replace('MainTabs', {
         grupoId,
         sociaId,
@@ -82,16 +84,16 @@ export default function FaceVerifyScreen({ navigation, route }) {
       });
     } catch (e) {
       console.log('[FaceVerify] Error saving photo:', e);
-      Alert.alert('Error', 'No se pudo guardar la foto.');
+      speak('Error al guardar la foto. Intenta de nuevo.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Skip photo and proceed (for existing members)
+  // GREEN button for existing members (no save needed)
   const handleVerifyConfirm = () => {
     confirmHaptic();
-    speakOnPress(`Bienvenida, ${sociaName}.`);
+    speak(`Bienvenida, ${sociaName}.`);
     navigation.replace('MainTabs', {
       grupoId,
       sociaId,
@@ -99,13 +101,20 @@ export default function FaceVerifyScreen({ navigation, route }) {
     });
   };
 
-  // Retry taking photo
-  const handleRetry = () => {
-    setCapturedPhoto(null);
-    setIsComparing(false);
+  // RED button - not me
+  const handleDeny = () => {
+    confirmHaptic();
+    speak('Regresando. Selecciona tu foto correcta.');
+    navigation.goBack();
   };
 
-  // Permission not granted yet
+  // Retry
+  const handleRetry = () => {
+    setCapturedPhoto(null);
+    speak('Intenta de nuevo. Toma otra foto.');
+  };
+
+  // Permission loading
   if (!permission) {
     return (
       <View style={styles.container}>
@@ -114,25 +123,17 @@ export default function FaceVerifyScreen({ navigation, route }) {
     );
   }
 
+  // Permission not granted
   if (!permission.granted) {
     return (
       <View style={styles.container}>
         <View style={styles.permissionCard}>
           <Camera size={64} color="#66bb6a" strokeWidth={1.5} />
           <Text style={styles.permissionTitle}>Acceso a la Cámara</Text>
-          <Text style={styles.permissionText}>
-            Necesitamos acceso a tu cámara para verificar tu identidad.
-          </Text>
-          <TouchableOpacity
-            style={styles.permissionButton}
-            onPress={requestPermission}
-          >
+          <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
             <Text style={styles.permissionButtonText}>Permitir Cámara</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.backLink}
-            onPress={() => navigation.goBack()}
-          >
+          <TouchableOpacity style={styles.backLink} onPress={() => navigation.goBack()}>
             <Text style={styles.backLinkText}>Volver</Text>
           </TouchableOpacity>
         </View>
@@ -140,124 +141,52 @@ export default function FaceVerifyScreen({ navigation, route }) {
     );
   }
 
-  // Comparison view (captured photo vs stored photo)
-  if (capturedPhoto && isComparing && !isFirstTime) {
+  // Photo taken - show comparison with BIG GREEN/RED buttons
+  if (capturedPhoto) {
     return (
       <View style={styles.container}>
-        <View style={styles.compareHeader}>
-          <TouchableOpacity
-            style={styles.headerBackBtn}
-            onPress={() => navigation.goBack()}
-          >
-            <ArrowLeft size={22} color="#e6edf3" />
-          </TouchableOpacity>
-          <Text style={styles.compareTitle}>Verificación</Text>
-        </View>
-
+        {/* Photos */}
         <View style={styles.compareContainer}>
-          <Text style={styles.compareLabel}>¿Eres {sociaName}?</Text>
-
-          <View style={styles.photoComparison}>
-            {/* Stored Photo */}
-            <View style={styles.comparePhotoCard}>
-              <Text style={styles.comparePhotoLabel}>Registrada</Text>
-              <Image
-                source={{ uri: sociaFotoUri }}
-                style={styles.comparePhoto}
-              />
+          {/* Show both photos if existing member */}
+          {!isFirstTime && fotoUri ? (
+            <View style={styles.photoRow}>
+              <View style={styles.photoCard}>
+                <Image source={{ uri: fotoUri }} style={styles.comparePhoto} />
+              </View>
+              <View style={styles.photoCard}>
+                <Image source={{ uri: capturedPhoto }} style={styles.comparePhoto} />
+              </View>
             </View>
-
-            {/* Captured Photo */}
-            <View style={styles.comparePhotoCard}>
-              <Text style={styles.comparePhotoLabel}>Actual</Text>
-              <Image
-                source={{ uri: capturedPhoto }}
-                style={styles.comparePhoto}
-              />
-            </View>
-          </View>
-
-          <View style={styles.compareActions}>
-            <TouchableOpacity
-              style={styles.retryButton}
-              onPress={handleRetry}
-            >
-              <RefreshCw size={20} color="#8b949e" />
-              <Text style={styles.retryText}>Reintentar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.denyButton}
-              onPress={() => navigation.goBack()}
-            >
-              <X size={20} color="#ef5350" />
-              <Text style={styles.denyText}>No soy yo</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.verifyButton}
-              onPress={handleVerifyConfirm}
-            >
-              <ShieldCheck size={20} color="#fff" />
-              <Text style={styles.verifyText}>Soy yo</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  // First time registration confirmation
-  if (capturedPhoto && isFirstTime) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.compareHeader}>
-          <TouchableOpacity
-            style={styles.headerBackBtn}
-            onPress={() => navigation.goBack()}
-          >
-            <ArrowLeft size={22} color="#e6edf3" />
-          </TouchableOpacity>
-          <Text style={styles.compareTitle}>Registro</Text>
-        </View>
-
-        <View style={styles.registerContainer}>
-          <ShieldCheck size={48} color="#66bb6a" strokeWidth={1.5} />
-          <Text style={styles.registerTitle}>
-            Registrar foto de {sociaName}
-          </Text>
-          <Text style={styles.registerSubtitle}>
-            Esta foto se usará para verificar tu identidad en el futuro.
-          </Text>
-
-          <Image source={{ uri: capturedPhoto }} style={styles.registerPhoto} />
-
-          {isSaving ? (
-            <ActivityIndicator
-              size="large"
-              color="#66bb6a"
-              style={{ marginTop: 24 }}
-            />
           ) : (
-            <View style={styles.registerActions}>
-              <TouchableOpacity
-                style={styles.retryButton}
-                onPress={handleRetry}
-              >
-                <RefreshCw size={20} color="#8b949e" />
-                <Text style={styles.retryText}>Reintentar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.registerConfirmButton}
-                onPress={handleConfirm}
-              >
-                <Check size={20} color="#fff" />
-                <Text style={styles.verifyText}>Confirmar y Entrar</Text>
-              </TouchableOpacity>
+            <View style={styles.singlePhotoCard}>
+              <Image source={{ uri: capturedPhoto }} style={styles.singlePhoto} />
             </View>
           )}
         </View>
+
+        {isSaving ? (
+          <ActivityIndicator size="large" color="#66bb6a" style={{ marginTop: 24 }} />
+        ) : (
+          <View style={styles.bigButtonContainer}>
+            {/* BIG GREEN BUTTON - Yes, it's me */}
+            <TouchableOpacity
+              style={styles.bigGreenButton}
+              onPress={isFirstTime ? handleConfirm : handleVerifyConfirm}
+              activeOpacity={0.7}
+            >
+              <Check size={60} color="#fff" strokeWidth={3} />
+            </TouchableOpacity>
+
+            {/* BIG RED BUTTON - No, not me */}
+            <TouchableOpacity
+              style={styles.bigRedButton}
+              onPress={handleDeny}
+              activeOpacity={0.7}
+            >
+              <X size={60} color="#fff" strokeWidth={3} />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     );
   }
@@ -265,7 +194,6 @@ export default function FaceVerifyScreen({ navigation, route }) {
   // Camera view
   return (
     <View style={styles.container}>
-      {/* Camera */}
       <CameraView
         ref={cameraRef}
         style={styles.camera}
@@ -273,30 +201,22 @@ export default function FaceVerifyScreen({ navigation, route }) {
       >
         {/* Top bar */}
         <View style={styles.cameraTopBar}>
-          <TouchableOpacity
-            style={styles.cameraBackBtn}
-            onPress={() => navigation.goBack()}
-          >
+          <TouchableOpacity style={styles.cameraBackBtn} onPress={() => navigation.goBack()}>
             <ArrowLeft size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.cameraName}>{sociaName}</Text>
         </View>
 
-        {/* Face guide overlay */}
+        {/* Face guide */}
         <View style={styles.faceGuide}>
           <View style={styles.faceOval} />
         </View>
 
-        {/* Bottom controls */}
+        {/* Capture button */}
         <View style={styles.cameraBottomBar}>
-          <Text style={styles.cameraInstruction}>
-            {isFirstTime
-              ? 'Toma tu foto de registro'
-              : 'Muestra tu rostro para verificar'}
-          </Text>
           <TouchableOpacity style={styles.captureButton} onPress={takePhoto}>
             <View style={styles.captureInner}>
-              <Camera size={32} color="#fff" strokeWidth={2} />
+              <Camera size={36} color="#fff" strokeWidth={2} />
             </View>
           </TouchableOpacity>
         </View>
@@ -322,33 +242,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#e6edf3',
     marginTop: 20,
-    marginBottom: 12,
-  },
-  permissionText: {
-    fontSize: 15,
-    color: '#8b949e',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 32,
+    marginBottom: 24,
   },
   permissionButton: {
     backgroundColor: '#66bb6a',
-    paddingVertical: 14,
-    paddingHorizontal: 32,
+    paddingVertical: 16,
+    paddingHorizontal: 36,
     borderRadius: 16,
   },
   permissionButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
   },
-  backLink: {
-    marginTop: 16,
-  },
-  backLinkText: {
-    color: '#8b949e',
-    fontSize: 14,
-  },
+  backLink: { marginTop: 16 },
+  backLinkText: { color: '#8b949e', fontSize: 14 },
   // Camera
   camera: {
     flex: 1,
@@ -365,7 +273,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
@@ -390,23 +298,12 @@ const styles = StyleSheet.create({
   },
   cameraBottomBar: {
     alignItems: 'center',
-    paddingBottom: 40,
-    paddingHorizontal: 20,
-  },
-  cameraInstruction: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 20,
-    textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    paddingBottom: 50,
   },
   captureButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     backgroundColor: 'rgba(102, 187, 106, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -414,164 +311,75 @@ const styles = StyleSheet.create({
     borderColor: '#66bb6a',
   },
   captureInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
     backgroundColor: '#66bb6a',
     justifyContent: 'center',
     alignItems: 'center',
   },
   // Compare
-  compareHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 60,
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    zIndex: 10,
-  },
-  headerBackBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: '#161b22',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-    borderWidth: 1,
-    borderColor: '#21253b',
-  },
-  compareTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#e6edf3',
-  },
   compareContainer: {
-    alignItems: 'center',
-    padding: 24,
     width: '100%',
+    paddingHorizontal: 24,
+    paddingTop: 80,
+    alignItems: 'center',
   },
-  compareLabel: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#e6edf3',
-    marginBottom: 24,
-  },
-  photoComparison: {
+  photoRow: {
     flexDirection: 'row',
     gap: 16,
-    marginBottom: 32,
   },
-  comparePhotoCard: {
-    alignItems: 'center',
-  },
-  comparePhotoLabel: {
-    color: '#8b949e',
-    fontSize: 13,
-    fontWeight: '500',
-    marginBottom: 8,
+  photoCard: {
+    flex: 1,
   },
   comparePhoto: {
-    width: 140,
-    height: 180,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: '#21253b',
-  },
-  compareActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  retryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 14,
-    backgroundColor: '#161b22',
-    borderWidth: 1,
-    borderColor: '#21253b',
-  },
-  retryText: {
-    color: '#8b949e',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  denyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 14,
-    backgroundColor: '#ef535015',
-    borderWidth: 1,
-    borderColor: '#ef535044',
-  },
-  denyText: {
-    color: '#ef5350',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  verifyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 14,
-    backgroundColor: '#66bb6a',
-  },
-  verifyText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  // Register
-  registerContainer: {
-    alignItems: 'center',
-    padding: 24,
     width: '100%',
+    height: 200,
+    borderRadius: 20,
+    borderWidth: 3,
+    borderColor: '#21253b',
   },
-  registerTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#e6edf3',
-    marginTop: 16,
-    marginBottom: 8,
-    textAlign: 'center',
+  singlePhotoCard: {
+    alignItems: 'center',
   },
-  registerSubtitle: {
-    fontSize: 14,
-    color: '#8b949e',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  registerPhoto: {
-    width: 200,
-    height: 260,
+  singlePhoto: {
+    width: 220,
+    height: 280,
     borderRadius: 24,
     borderWidth: 3,
     borderColor: '#66bb6a44',
   },
-  registerActions: {
+  // BIG BUTTONS
+  bigButtonContainer: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 24,
+    gap: 24,
+    marginTop: 40,
+    paddingHorizontal: 32,
   },
-  registerConfirmButton: {
-    flexDirection: 'row',
+  bigGreenButton: {
+    flex: 1,
+    height: 120,
+    borderRadius: 24,
+    backgroundColor: '#43a047',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 14,
-    backgroundColor: '#66bb6a',
+    elevation: 8,
+    shadowColor: '#43a047',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+  },
+  bigRedButton: {
+    flex: 1,
+    height: 120,
+    borderRadius: 24,
+    backgroundColor: '#e53935',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#e53935',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
   },
 });

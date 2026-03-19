@@ -7,21 +7,36 @@ import {
   ScrollView,
   StyleSheet,
   Image,
+  Modal,
 } from 'react-native';
-import { Users, Star, Plus, ChevronRight, DollarSign } from 'lucide-react-native';
+import { Users, Star, Plus, ChevronRight, DollarSign, Check, X } from 'lucide-react-native';
 import { getAllGrupos, getSociasByGrupo, getTotalAhorro } from '../database';
-import { speakOnPress, confirmHaptic } from '../utils/audioGuide';
+import { speakOnPress, confirmHaptic, speak } from '../utils/audioGuide';
+
+// Distinct colors for each group - no repeats, easily distinguishable
+const GROUP_COLORS = [
+  '#e53935', // rojo fuerte
+  '#1e88e5', // azul
+  '#43a047', // verde
+  '#fb8c00', // naranja
+  '#8e24aa', // morado
+  '#00acc1', // cyan
+  '#f4511e', // rojo-naranja
+  '#3949ab', // indigo
+  '#c0ca33', // lima
+  '#e91e63', // rosa
+];
 
 export default function CommunityListScreen({ navigation }) {
   const [grupos, setGrupos] = useState([]);
   const [grupoSocias, setGrupoSocias] = useState({});
   const [grupoTotals, setGrupoTotals] = useState({});
+  const [confirmModal, setConfirmModal] = useState(null); // { grupo, color }
 
   const loadData = useCallback(async () => {
     try {
       const g = await getAllGrupos();
       setGrupos(g);
-      // Load socias and totals for each group
       const sociaMap = {};
       const totalsMap = {};
       for (const grupo of g) {
@@ -43,52 +58,36 @@ export default function CommunityListScreen({ navigation }) {
     }, [loadData])
   );
 
+  const handleGroupPress = (grupo, color) => {
+    confirmHaptic();
+    setConfirmModal({ grupo, color });
+    setTimeout(() => {
+      speak(`Grupo ${grupo.nombre_audio}. ¿Quieres acceder a este grupo? Selecciona el botón azul si es así, o el botón rojo si no.`);
+    }, 300);
+  };
+
+  const confirmGroup = () => {
+    const { grupo } = confirmModal;
+    setConfirmModal(null);
+    confirmHaptic();
+    navigation.navigate('GroupDetail', { grupoId: grupo.id });
+  };
+
+  const cancelGroup = () => {
+    setConfirmModal(null);
+    confirmHaptic();
+    speak('Selecciona otro grupo.');
+  };
+
   const renderStars = (rating) => {
     return Array.from({ length: 5 }).map((_, i) => (
       <Star
         key={i}
-        size={16}
+        size={14}
         color={i < Math.round(rating) ? '#ffd54f' : '#333'}
         fill={i < Math.round(rating) ? '#ffd54f' : 'transparent'}
       />
     ));
-  };
-
-  const renderMemberAvatars = (socias, grupoId) => {
-    const displayed = (socias || []).slice(0, 6);
-    return (
-      <View style={styles.avatarRow}>
-        {displayed.map((s, i) => (
-          <View
-            key={s.id}
-            style={[
-              styles.avatar,
-              { marginLeft: i > 0 ? -10 : 0 },
-            ]}
-          >
-            {s.foto_uri ? (
-              <Image source={{ uri: s.foto_uri }} style={styles.avatarImage} />
-            ) : (
-              <View style={[styles.avatarColor, { backgroundColor: s.avatar_color }]} />
-            )}
-          </View>
-        ))}
-        {(socias || []).length > 6 && (
-          <View style={[styles.avatar, styles.moreAvatar, { marginLeft: -10 }]}>
-            <Text style={styles.moreText}>+{socias.length - 6}</Text>
-          </View>
-        )}
-        <TouchableOpacity
-          style={[styles.avatar, styles.addAvatar, { marginLeft: displayed.length > 0 ? -10 : 0 }]}
-          onPress={() => {
-            confirmHaptic();
-            navigation.navigate('GroupDetail', { grupoId });
-          }}
-        >
-          <Plus size={18} color="#66bb6a" strokeWidth={2.5} />
-        </TouchableOpacity>
-      </View>
-    );
   };
 
   return (
@@ -106,57 +105,67 @@ export default function CommunityListScreen({ navigation }) {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {grupos.map((grupo) => {
+        {grupos.map((grupo, index) => {
           const socias = grupoSocias[grupo.id] || [];
           const totals = grupoTotals[grupo.id] || { total_ahorro: 0, total_prestamo: 0, total_pago: 0 };
           const totalNeto = totals.total_ahorro - totals.total_prestamo + totals.total_pago;
+          const groupColor = GROUP_COLORS[index % GROUP_COLORS.length];
+
           return (
             <TouchableOpacity
               key={grupo.id}
-              style={styles.groupCard}
-              onPress={() => {
-                confirmHaptic();
-                speakOnPress(`${grupo.nombre_audio}. ${grupo.miembros} miembros. Total ahorrado: ${Math.floor(totalNeto)} dólares.`);
-                navigation.navigate('GroupDetail', { grupoId: grupo.id });
-              }}
+              style={[styles.groupCard, { borderLeftColor: groupColor, borderLeftWidth: 6 }]}
+              onPress={() => handleGroupPress(grupo, groupColor)}
               activeOpacity={0.7}
             >
-              {/* Group Header */}
-              <View style={styles.cardHeader}>
-                <View style={styles.groupIconContainer}>
-                  <Users size={24} color="#ffd54f" strokeWidth={2} />
+              {/* Color band at top */}
+              <View style={[styles.colorBand, { backgroundColor: groupColor }]}>
+                <Users size={22} color="#fff" strokeWidth={2.5} />
+                <Text style={styles.groupNameBand} numberOfLines={1}>
+                  {grupo.nombre_audio}
+                </Text>
+              </View>
+
+              {/* Info row */}
+              <View style={styles.infoRow}>
+                <View style={styles.starsRow}>
+                  {renderStars(grupo.rating)}
                 </View>
-                <View style={styles.cardHeaderText}>
-                  <Text style={styles.groupName} numberOfLines={1}>
-                    {grupo.nombre_audio}
-                  </Text>
-                  <View style={styles.starsRow}>
-                    {renderStars(grupo.rating)}
-                    <Text style={styles.ratingText}>{grupo.rating.toFixed(1)}</Text>
+                <View style={styles.totalBadge}>
+                  <DollarSign size={14} color="#66bb6a" />
+                  <Text style={styles.totalText}>${totalNeto.toFixed(0)}</Text>
+                </View>
+              </View>
+
+              {/* Members row */}
+              <View style={styles.membersRow}>
+                {socias.slice(0, 5).map((s, i) => (
+                  <View
+                    key={s.id}
+                    style={[styles.avatar, { marginLeft: i > 0 ? -8 : 0 }]}
+                  >
+                    {s.foto_uri ? (
+                      <Image source={{ uri: s.foto_uri }} style={styles.avatarImage} />
+                    ) : (
+                      <View style={[styles.avatarColor, { backgroundColor: s.avatar_color }]} />
+                    )}
                   </View>
-                </View>
-                <ChevronRight size={22} color="#555" />
-              </View>
-
-              {/* Total Savings */}
-              <View style={styles.totalRow}>
-                <View style={styles.totalIcon}>
-                  <DollarSign size={18} color="#66bb6a" strokeWidth={2.5} />
-                </View>
-                <Text style={styles.totalLabel}>Total comunidad:</Text>
-                <Text style={styles.totalAmount}>${totalNeto.toFixed(2)}</Text>
-              </View>
-
-              {/* Members Row */}
-              <View style={styles.cardFooter}>
-                <Text style={styles.membersLabel}>
+                ))}
+                {socias.length > 5 && (
+                  <View style={[styles.avatar, styles.moreAvatar, { marginLeft: -8 }]}>
+                    <Text style={styles.moreText}>+{socias.length - 5}</Text>
+                  </View>
+                )}
+                <Text style={styles.memberCountText}>
                   {socias.length} miembro{socias.length !== 1 ? 's' : ''}
                 </Text>
-                {renderMemberAvatars(socias, grupo.id)}
               </View>
+
+              <ChevronRight size={20} color="#555" style={styles.chevron} />
             </TouchableOpacity>
           );
         })}
+
         {grupos.length === 0 && (
           <View style={styles.emptyState}>
             <Users size={64} color="#333" strokeWidth={1} />
@@ -166,6 +175,54 @@ export default function CommunityListScreen({ navigation }) {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* Confirmation Modal */}
+      <Modal
+        visible={!!confirmModal}
+        transparent
+        animationType="fade"
+        onRequestClose={cancelGroup}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {/* Group color indicator */}
+            {confirmModal && (
+              <View style={[styles.modalColorBar, { backgroundColor: confirmModal.color }]}>
+                <Users size={40} color="#fff" strokeWidth={2} />
+              </View>
+            )}
+
+            <Text style={styles.modalTitle}>
+              {confirmModal?.grupo.nombre_audio}
+            </Text>
+
+            <Text style={styles.modalSubtitle}>
+              ¿Quieres acceder a este grupo?
+            </Text>
+
+            {/* Big colored buttons */}
+            <View style={styles.modalButtons}>
+              {/* Blue = YES */}
+              <TouchableOpacity
+                style={[styles.bigButton, styles.bigButtonBlue]}
+                onPress={confirmGroup}
+                activeOpacity={0.7}
+              >
+                <Check size={48} color="#fff" strokeWidth={3} />
+              </TouchableOpacity>
+
+              {/* Red = NO */}
+              <TouchableOpacity
+                style={[styles.bigButton, styles.bigButtonRed]}
+                onPress={cancelGroup}
+                activeOpacity={0.7}
+              >
+                <X size={48} color="#fff" strokeWidth={3} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -209,95 +266,61 @@ const styles = StyleSheet.create({
   groupCard: {
     backgroundColor: '#161b22',
     borderRadius: 20,
-    padding: 20,
-    marginBottom: 14,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#21253b',
+    overflow: 'hidden',
     elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    position: 'relative',
   },
-  cardHeader: {
+  colorBand: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    gap: 12,
   },
-  groupIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: '#21253b',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  cardHeaderText: {
+  groupNameBand: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
     flex: 1,
   },
-  groupName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#e6edf3',
-    marginBottom: 4,
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    justifyContent: 'space-between',
   },
   starsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     gap: 2,
   },
-  ratingText: {
-    fontSize: 13,
-    color: '#8b949e',
-    marginLeft: 6,
-  },
-  cardFooter: {
-    borderTopWidth: 1,
-    borderTopColor: '#21253b',
-    paddingTop: 14,
-  },
-  totalRow: {
+  totalBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#66bb6a12',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 14,
-  },
-  totalIcon: {
-    width: 32,
-    height: 32,
+    backgroundColor: '#66bb6a18',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 10,
-    backgroundColor: '#66bb6a22',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
+    gap: 4,
   },
-  totalLabel: {
-    color: '#8b949e',
-    fontSize: 13,
-    flex: 1,
-  },
-  totalAmount: {
+  totalText: {
     color: '#66bb6a',
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '700',
   },
-  membersLabel: {
-    fontSize: 13,
-    color: '#8b949e',
-    marginBottom: 10,
-    fontWeight: '500',
-  },
-  avatarRow: {
+  membersRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 16,
+    paddingHorizontal: 18,
   },
   avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     borderWidth: 2.5,
     borderColor: '#161b22',
     overflow: 'hidden',
@@ -305,12 +328,12 @@ const styles = StyleSheet.create({
   avatarImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 19,
+    borderRadius: 17,
   },
   avatarColor: {
     width: '100%',
     height: '100%',
-    borderRadius: 19,
+    borderRadius: 17,
   },
   moreAvatar: {
     backgroundColor: '#21253b',
@@ -322,12 +345,15 @@ const styles = StyleSheet.create({
     color: '#8b949e',
     fontWeight: '700',
   },
-  addAvatar: {
-    backgroundColor: '#0d1117',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderColor: '#66bb6a44',
-    borderStyle: 'dashed',
+  memberCountText: {
+    color: '#8b949e',
+    fontSize: 12,
+    marginLeft: 10,
+  },
+  chevron: {
+    position: 'absolute',
+    right: 18,
+    top: '50%',
   },
   emptyState: {
     alignItems: 'center',
@@ -338,5 +364,64 @@ const styles = StyleSheet.create({
     color: '#555',
     fontSize: 16,
     marginTop: 16,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    backgroundColor: '#161b22',
+    borderRadius: 28,
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#21253b',
+  },
+  modalColorBar: {
+    width: '100%',
+    paddingVertical: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    color: '#e6edf3',
+    fontSize: 24,
+    fontWeight: '700',
+    marginTop: 20,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  modalSubtitle: {
+    color: '#8b949e',
+    fontSize: 16,
+    marginTop: 8,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 20,
+    paddingBottom: 30,
+    paddingHorizontal: 30,
+  },
+  bigButton: {
+    flex: 1,
+    height: 90,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 6,
+  },
+  bigButtonBlue: {
+    backgroundColor: '#1e88e5',
+  },
+  bigButtonRed: {
+    backgroundColor: '#e53935',
   },
 });
